@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Page Turner">
+  <title>Page Turner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="rail">
+      <div class="ident">
+        <span class="mark">Page Turner</span>
+        <span class="tag">Test 2</span>
+        <span class="file" id="fileName">Loading the sample score…</span>
+      </div>
+      <div class="controls">
+        <button id="openBtn" class="btn primary" type="button">Open PDF</button>
+        <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+        <div class="counter">
+          <button id="prevBtn" class="btn icon" type="button" aria-label="Previous page">‹</button>
+          <output id="pageNum" aria-live="polite">– / –</output>
+          <button id="nextBtn" class="btn icon" type="button" aria-label="Next page">›</button>
+        </div>
+        <button id="listenBtn" class="btn listen" type="button" aria-pressed="false">
+          <span class="meter" aria-hidden="true"><i id="listenMeter"></i></span>
+          <span id="listenLabel">Listen</span>
+        </button>
+        <div class="pedal" id="pedal" data-state="nofocus">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="label">Pedal:</span>
+          <span class="key" id="pedalText">tap the music</span>
+        </div>
+        <button id="helpBtn" class="btn icon" type="button" aria-label="Show test steps" aria-expanded="true" aria-controls="card">?</button>
+      </div>
+    </header>
+
+    <main class="stand" id="stand" tabindex="-1" aria-label="Sheet music. Tap the right side for the next page and the left side for the previous page.">
+      <div class="sheet" id="sheet"></div>
+      <div class="status" id="status" hidden><span id="statusText"></span></div>
+      <div class="toast" id="toast" hidden></div>
+    </main>
+
+    <aside class="card" id="card" aria-label="Test steps">
+      <h2>Test 2: PDFs, pedal and listening</h2>
+      <ol>
+        <li><b>Open one of your PDFs</b> with the Open PDF button.</li>
+        <li><b>Press each pedal.</b> The Pedal box at the top shows the key it sends.</li>
+        <li><b>Tap Listen</b>, allow the microphone, and play a few notes or chords. The bars should jump to the notes you play.</li>
+      </ol>
+      <p class="seen">Keys received: <span id="keysSeen">none yet</span></p>
+
+      <section class="ear" aria-label="Notes the app hears">
+        <p class="heard"><span class="label">Hearing:</span> <b id="earHeard">tap Listen to start</b></p>
+        <div class="keys" id="earKeys"></div>
+        <div class="level" aria-hidden="true"><i id="earLevel"></i></div>
+        <p class="note" id="earNote" hidden></p>
+      </section>
+
+      <div class="actions">
+        <button id="cardClose" class="btn" type="button">Hide steps</button>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>
