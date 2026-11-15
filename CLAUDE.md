@@ -6,9 +6,11 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 3 (current):** Teach and Follow. Teach: play the piece once, turning pages by pedal; the app stores the
-  sound's features and the turn moments on the device. Follow: play it again and the app turns pages itself.
-  Also a faster note display (about 55 ms instead of about 115 ms) and background-noise learning.
+- **Test 4 (current):** practice mode. Follow starts from the page on screen and finds the pianist anywhere in the
+  piece; it keeps up with stops, repeats, jumps back (turning back a page when needed) and skips ahead, and holds
+  still while the pianist plays something that isn't in the piece. A page flip by the pianist is a hint.
+- **Test 3:** Teach and Follow. The owner tested it on their piano: every page turned by itself at the taught
+  moments, no wrong turns, never stuck. The pedal keys work (the "Pedal keys received" line showed them correctly).
 - Live at https://godisgood-code.github.io/page-turner/ through GitHub Pages, deployed from `main`, root folder.
 - The owner approved publishing tested updates straight to `main` (no need to ask each time).
 - Test 2 feedback from the owner: single notes without pedal were read well; pedaled chords with uneven voicing
@@ -17,9 +19,11 @@ language; the owner tests on their iPad and reports back.
 ## Plan agreed with the owner
 
 1. **Basics:** PDF display, pedal and tap turns, mic check. Done.
-2. **Teach it once:** built in Test 3; waiting for iPad feedback. First goal: turning pages with no human help.
-3. **Practice robustness:** starting mid-piece, stops and restarts, repeated bars, jumps back, "lost" detection.
-   Today the follower assumes a start from the beginning and only moves forward (it holds still during pauses).
+2. **Teach it once:** done in Test 3 and confirmed on the owner's piano.
+3. **Practice robustness:** built in Test 4; waiting for iPad feedback. Known limit: when the same music appears in
+   two places (a written-out repeat on another page) and the pianist jumps between them without flipping the page,
+   the follower may guess the copy on the page that's showing; it corrects itself a couple of seconds later, and a
+   page flip by the pianist settles it at once.
 4. **Reading the sheet music:** convert scans to MusicXML with an existing OMR tool (Audiveris, PlayScore 2,
    Soundslice and similar), build the reference from the notes, and reuse the same follower. Handle repeats,
    D.S. and codas. The owner definitely wants this step.
@@ -30,8 +34,7 @@ The owner has more features in mind after automatic page turning works.
 ## Owner's setup
 
 - iPad with Safari. Sheet music is mostly scans and PDFs.
-- Bluetooth page-turn pedal with forward and back pedals. Which keys it sends is not confirmed yet (the app's
-  "Pedal keys received" line shows it).
+- Bluetooth page-turn pedal with forward and back pedals; it works with the app.
 
 ## Code
 
@@ -40,8 +43,13 @@ The owner has more features in mind after automatic page turning works.
   - `fft.js`: radix-2 FFT.
   - `features.js`: microphone samples → 50 frames per second: chroma (12 note names, loudness-compressed), onset
     chroma (notes just struck), `sounding` (music versus the room's learned background), display data.
-  - `follower.js`: `makeLesson` (from teaching frames and page turns; long silences squeezed out) and `Follower`
-    (online DTW: each live frame advances the lesson by 0–3 frames; turns 0.3 s before the taught moment).
+  - `follower.js`: `makeLesson` (from teaching frames and page turns; long silences squeezed out) and `Follower`:
+    tracking by online DTW (each live frame advances the lesson by 0–3 frames; turns 0.3 s before the taught
+    moment) plus practice logic: states waiting → searching ↔ following (→ finished); looks up the recent 2.5 s
+    in the whole piece at the start, after pauses and when lost, and every 0.5 s while following to catch jumps.
+    Equally good places (repeats) are told apart by the page on screen. Costs: good matches about 0.03–0.06,
+    identical passages differ by about 0.015, so jumps need a 0.03 margin and 30% better.
+  - `search.js`: subsequence DTW over a coarse copy of the lesson (groups of 4 frames).
   - `hearing.js`: the "Hearing" note display.
 - `audio/capture-worklet.js` (audio thread) → `listen.js` (`Microphone`) → `FeatureExtractor`.
 - `store.js`: IndexedDB on the device: lessons keyed by PDF fingerprint plus page count, and the last opened PDF.
@@ -61,9 +69,14 @@ The owner has more features in mind after automatic page turning works.
   - `node tests/display-eval.js tests/output/perf voicing ref no_pedal`: note display versus the notes played.
     Chroma-based display accuracy has a ceiling (about 80% of notes caught, about 60% of shown notes correct);
     reliable note-by-note recognition would need a trained model (for example Spotify's Basic Pitch).
+  - `python3 tools/synth_performances.py tests/output/perf --practice` then `node tests/practice-eval.js
+    tests/output/perf`: 13 practice sessions (start mid-piece with and without flipping, repeats, jump back with and
+    without a flip, noodling, skip ahead, a repeated section, back over a page turn, fast, slow, noisy). Currently
+    found within 4 s after 24/25 restarts (about 1.3 s typically), 15/16 page breaks on time, 0 stray page changes;
+    the misses are the known identical-copy case (p_jump_back).
   - `python3 tools/synth_performances.py tests/output/short --short` then
-    `NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs`: real-browser Teach then Follow with a fake
-    microphone (about 1.5 minutes).
+    `NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs`: real-browser Teach, Follow and Practice with a fake
+    microphone (about 2.5 minutes).
 - Claude can't hear the owner's piano. Ask for their observations; for tuning, recordings of the same piece played
   two or three times (Voice Memos is fine) plus its PDF.
 

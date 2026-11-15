@@ -1,9 +1,11 @@
-// End-to-end Teach and Follow test in a real browser with a fake microphone. Takes about 1.5 minutes.
+// End-to-end Teach and Follow test in a real browser with a fake microphone. Takes about 2.5 minutes.
 //   1) python3 tools/synth_performances.py tests/output/short --short    (needs fluidsynth)
 //   2) NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs
 // Teach: the microphone plays one performance and the test presses the pedal where each page ends.
 // Follow: a different, faster performance plays and nobody touches the pedal. The pages must turn
 // on their own, no more than 1.5 s early and 0.3 s late.
+// Practice: flip to page 3, play from the middle of it into page 4, pause, then go back to page 2 and
+// play into page 3. The app must turn to page 4, jump back to page 2, then turn to page 3.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const os = require('os');
@@ -83,6 +85,31 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
   check('no extra turns', turns.length === followT.turns.length, `${turns.length} turns`);
   check('progress reached the end', progress > 95, `${progress}%`);
   check('ends on the last page', (await page.evaluate(() => window.pageTurner.page)) === 4);
+  await ctx.close();
+
+  // Practice
+  const P = JSON.parse(fs.readFileSync(path.join(DATA, 'short_practice.json'), 'utf8'));
+  const track = P.track;
+  const reaches = (beat, after) => track.find(([t, b]) => t >= after && b >= beat)[0];
+  const restart = track.find(([t, b], i) => i > 0 && b >= 0 && track[i - 1][1] < 0 && t > 5)[0];
+  ({ ctx, page } = await open(profile, path.join(DATA, 'short_practice.wav')));
+  await page.waitForFunction(() => !document.querySelector('#followBtn').disabled, null, { timeout: 8000 });
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => document.querySelector('#pageNum').value === '3 / 4');
+  await page.click('#followBtn');
+  await waitAudio(page, track[track.length - 1][0] - 0.5);
+  const log = await page.evaluate(() => window.pageTurner.turns);
+  const timing = (got, should) => (got ? `${got.time - should >= 0 ? '+' : ''}${(got.time - should).toFixed(2)} s from the right moment` : 'never');
+  const to4 = log.find((t) => t.page === 4 && t.how === 'auto');
+  const should4 = reaches(47, 0);
+  check('practice: started mid-page and turned to page 4', to4 && to4.time - should4 >= -1.5 && to4.time - should4 <= 0.3, timing(to4, should4));
+  const back2 = log.find((t) => t.page === 2 && t.how === 'jump' && t.time >= restart);
+  check('practice: went back to page 2 after the restart', back2 && back2.time - restart <= 4, back2 ? `${(back2.time - restart).toFixed(1)} s after restarting` : 'never');
+  const to3 = log.find((t) => t.page === 3 && t.how === 'auto' && t.time > restart);
+  const should3 = reaches(31, restart);
+  check('practice: then turned to page 3 again', to3 && to3.time - should3 >= -1.5 && to3.time - should3 <= 0.3, timing(to3, should3));
+  check('practice: no other page changes', log.length === 3, log.map((t) => `${t.time.toFixed(1)}s p${t.page} ${t.how}`).join(', '));
   await ctx.close();
   server.close();
   console.log(results.join('\n'));

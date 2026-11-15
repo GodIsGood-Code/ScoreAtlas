@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Makes synthetic piano performances for testing the page-turn follower.
 
-Usage: python3 tools/synth_performances.py OUT_DIR [--short]
+Usage: python3 tools/synth_performances.py OUT_DIR [--short | --practice] [NAMES...]
 Needs numpy, pretty_midi, and fluidsynth with the FluidR3 GM soundfont
 (apt-get install fluidsynth fluid-soundfont-gm; pip install pretty_midi).
 
@@ -143,6 +143,17 @@ def perform(name, out_dir, short, base=76, depth=0.05, phase=0.0, mel=88, acc=58
                                          pretty_midi.ControlChange(64, 127, at(pause_at) + 0.1), pretty_midi.ControlChange(64, 0, t_up)]
             else:
                 inst.control_changes += [pretty_midi.ControlChange(64, 127, t_down), pretty_midi.ControlChange(64, 0, t_up)]
+    render(inst, out_dir, name, at(total) + TAIL, noise_db, tilt, gain_db, seed)
+    page_bars = 4 if short else 8
+    turn_beats = [4 * page_bars * k - 1 for k in range(1, total // (4 * page_bars))]
+    with open(os.path.join(out_dir, name + ".json"), "w") as f:
+        json.dump({"beats": beats[::5].round(3).tolist(), "times": times[::5].round(4).tolist(),
+                   "turnBeats": turn_beats, "totalBeats": total, "pause": [pause_at, pause_len],
+                   "notes": sorted(played)}, f)
+
+
+def render(inst, out_dir, name, end_time, noise_db, tilt, gain_db, seed):
+    """Synthesize the notes with FluidSynth, then add microphone colour and room noise; writes NAME.wav."""
     pm = pretty_midi.PrettyMIDI()
     pm.instruments.append(inst)
     mid = os.path.join(out_dir, name + ".mid")
@@ -150,13 +161,13 @@ def perform(name, out_dir, short, base=76, depth=0.05, phase=0.0, mel=88, acc=58
     pm.write(mid)
     subprocess.run(["fluidsynth", "-ni", "-q", "-g", "0.6", "-r", str(SR), "-F", raw, SF2, mid], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     with wave.open(raw) as w:
         ch = w.getnchannels()
         x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
         x = x.reshape(-1, ch).mean(axis=1)
     os.remove(raw)
-    end = int((at(total) + TAIL) * SR)
+    os.remove(mid)
+    end = int(end_time * SR)
     x = np.pad(x, (0, max(0, end - len(x))))[:end]
     nprng = np.random.default_rng(seed)
     if tilt:
@@ -178,13 +189,70 @@ def perform(name, out_dir, short, base=76, depth=0.05, phase=0.0, mel=88, acc=58
         w.setsampwidth(2)
         w.setframerate(SR)
         w.writeframes((y * 32767).astype(np.int16).tobytes())
-    os.remove(mid)
-    page_bars = 4 if short else 8
-    turn_beats = [4 * page_bars * k - 1 for k in range(1, total // (4 * page_bars))]
+
+
+def practice(name, out_dir, segments, initial_page=1, short=False, base=78, depth=0.05, phase=0.6, mel=90, acc=56, vel_jitter=6,
+             timing=0.012, noise_db=-46, tilt=0.2, gain_db=0.0, seed=21):
+    """A practice session: segments of ("play", from_beat, to_beat), ("pause", seconds) or ("noodle", seconds)
+    (notes that aren't in the piece). The JSON's "track" gives, every 0.05 s, the beat being played (-1: none)."""
+    rng = random.Random(seed)
+    events, pedals, total = build_score(short)
+    beats, times = tempo_map(total, base, depth, phase)
+    at = lambda b: float(np.interp(b, beats, times)) - LEAD_IN
+    page_beats = 16 if short else 32
+    inst = pretty_midi.Instrument(program=0)
+    cc = inst.control_changes
+    track, t, flips = [], LEAD_IN, []
+    def mark(t0, t1, beat_of):
+        k = math.ceil(t0 / 0.05)
+        while k * 0.05 < t1:
+            track.append([round(k * 0.05, 3), beat_of(k * 0.05)])
+            k += 1
+    mark(0, LEAD_IN, lambda _: -1)
+    for seg in segments:
+        if seg[0] == "play":
+            _, b0, b1 = seg
+            off = t - at(b0)
+            seg_end = at(b1) + off
+            for (sb, db, pitch, role) in events:
+                if not (b0 <= sb < b1):
+                    continue
+                start = at(sb) + off + rng.gauss(0, timing)
+                end = min(at(sb + db) + off + 0.02, seg_end + 0.05)
+                vel = (mel if role == "mel" else acc) + (6 if sb % 4 == 0 else 0) + rng.gauss(0, vel_jitter)
+                inst.notes.append(pretty_midi.Note(velocity=int(max(1, min(127, vel))), pitch=pitch,
+                                                   start=max(0.0, start), end=max(start + 0.05, end)))
+            for (down, up) in pedals:
+                if up <= b0 or down >= b1:
+                    continue
+                cc += [pretty_midi.ControlChange(64, 127, at(max(down, b0)) + off + 0.03),
+                       pretty_midi.ControlChange(64, 0, min(at(up) + off, seg_end))]
+            mark(t, seg_end, lambda x: round(float(np.interp(x - off + LEAD_IN, times, beats)), 3))
+            t = seg_end
+        elif seg[0] == "flip":
+            flips.append([round(t, 3), seg[1]])
+        elif seg[0] == "pause":
+            mark(t, t + seg[1], lambda _: -1)
+            t += seg[1]
+        elif seg[0] == "noodle":
+            # F-sharp major pentatonic runs over F-sharp chords: notes the piece never uses together
+            pent = [66, 68, 70, 73, 75, 78, 80, 82, 85, 87]
+            k, step = 0, 0.125
+            while k * step < seg[1]:
+                p = pent[(k * 3 + rng.randrange(3)) % len(pent)]
+                inst.notes.append(pretty_midi.Note(velocity=80, pitch=p, start=t + k * step, end=t + (k + 1) * step))
+                if k % 8 == 0:
+                    for q in (42, 49, 54):
+                        inst.notes.append(pretty_midi.Note(velocity=60, pitch=q, start=t + k * step, end=t + (k + 8) * step))
+                k += 1
+            mark(t, t + seg[1], lambda _: -1)
+            t += seg[1]
+    render(inst, out_dir, name, t + TAIL, noise_db, tilt, gain_db, seed)
+    mark(t, t + TAIL, lambda _: -1)
     with open(os.path.join(out_dir, name + ".json"), "w") as f:
-        json.dump({"beats": beats[::5].round(3).tolist(), "times": times[::5].round(4).tolist(),
-                   "turnBeats": turn_beats, "totalBeats": total, "pause": [pause_at, pause_len],
-                   "notes": sorted(played)}, f)
+        json.dump({"track": track, "turnBeats": [page_beats * k - 1 for k in range(1, total // page_beats)],
+                   "totalBeats": total, "initialPage": initial_page,
+                   "segments": [list(x) for x in segments], "flips": flips}, f)
 
 
 CASES = {
@@ -200,8 +268,28 @@ CASES = {
     "voicing": dict(base=76, depth=0.06, phase=2.5, mel=112, acc=38, vel_jitter=10, noise_db=-45, seed=9),
     "no_pedal": dict(base=76, depth=0.05, phase=1.1, pedal=False, noise_db=-45, seed=10),
 }
+# Practice sessions, all followed with the lesson taught by "ref". Pages are 8 bars (32 beats) long:
+# page 1 = beats 0-31, page 2 = 32-63, page 3 = 64-95, page 4 = 96-127. Sections: A A B A, so the
+# A theme appears on pages 1, 2 and 4.
+PRACTICE = {
+    "p_start_mid": dict(initial_page=3, segments=[("play", 64, 112)], seed=31),
+    "p_start_mid_no_flip": dict(initial_page=1, segments=[("play", 66, 104)], seed=32),
+    "p_repeat_passage": dict(initial_page=2, segments=[("play", 40, 56), ("pause", 1.5), ("play", 40, 56), ("pause", 1.2), ("play", 40, 72)], seed=33),
+    "p_jump_back": dict(initial_page=1, segments=[("play", 16, 40), ("play", 22, 44)], seed=34),
+    "p_jump_back_flip": dict(initial_page=1, segments=[("play", 16, 40), ("flip", 1), ("play", 22, 44)], seed=39),
+    "p_noodle": dict(initial_page=1, segments=[("play", 0, 20), ("pause", 0.6), ("noodle", 5.0), ("pause", 0.8), ("play", 20, 40)], seed=35),
+    "p_skip_ahead": dict(initial_page=1, segments=[("play", 0, 12), ("pause", 2.0), ("play", 70, 104)], seed=36),
+    "p_repeat_section": dict(initial_page=4, segments=[("play", 96, 122)], seed=37),
+    "p_start_mid_fast": dict(initial_page=3, segments=[("play", 64, 112)], base=94, phase=1.9, seed=41),
+    "p_repeat_passage_slow": dict(initial_page=2, segments=[("play", 40, 56), ("pause", 1.5), ("play", 40, 56), ("pause", 1.2), ("play", 40, 72)], base=60, phase=2.4, seed=42),
+    "p_skip_ahead_noisy": dict(initial_page=1, segments=[("play", 0, 12), ("pause", 2.0), ("play", 70, 104)], noise_db=-33, tilt=0.5, seed=43),
+    "p_noodle_fast": dict(initial_page=1, segments=[("play", 0, 20), ("pause", 0.6), ("noodle", 5.0), ("pause", 0.8), ("play", 20, 40)], base=92, seed=44),
+    "p_back_over_turn": dict(initial_page=2, segments=[("play", 52, 72), ("pause", 1.5), ("play", 56, 72), ("pause", 1.5), ("play", 56, 76)], seed=38),
+}
 SHORT_CASES = {
     "short_teach": dict(base=84, depth=0.04, phase=0.0, mel=88, acc=58, noise_db=-50, seed=11),
+    # practice on the short piece (pages are 4 bars = 16 beats): start on page 3, then go back to page 2
+    "short_practice": dict(practice=True, initial_page=3, segments=[("play", 33, 60), ("pause", 2.0), ("play", 20, 36)], base=90, phase=0.8, seed=13),
     "short_follow": dict(base=94, depth=0.05, phase=1.2, mel=100, acc=50, noise_db=-42, tilt=0.3, seed=12),
 }
 
@@ -210,8 +298,17 @@ if __name__ == "__main__":
     short = "--short" in sys.argv
     only = [a for a in sys.argv[2:] if not a.startswith("--")]
     os.makedirs(out, exist_ok=True)
+    if "--practice" in sys.argv:
+        for name, cfg in PRACTICE.items():
+            if not only or name in only:
+                practice(name, out, **cfg)
+                print("made", name)
+        sys.exit(0)
     for name, cfg in (SHORT_CASES if short else CASES).items():
         if only and name not in only:
             continue
-        perform(name, out, short, **cfg)
+        if cfg.pop("practice", False):
+            practice(name, out, short=True, **cfg)
+        else:
+            perform(name, out, short, **cfg)
         print("made", name)

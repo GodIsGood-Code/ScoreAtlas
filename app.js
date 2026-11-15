@@ -1,6 +1,6 @@
 // Page Turner: shows a PDF one page at a time and turns pages from a Bluetooth pedal, taps or swipes.
-// Test 3 adds Teach (play the piece once, turning pages yourself) and Follow (play it again and the
-// app turns the pages by listening).
+// Teach: play the piece once, turning pages yourself. Follow: play it again, from anywhere, and the app
+// turns the pages by listening, keeping up with practice (stops, repeats, jumps).
 import { Microphone } from "./listen.js";
 import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
@@ -155,7 +155,7 @@ function turn(step) {
     teach.turns.push({ frame: Math.max(0, teach.frames.length - 1), page: target });
     updateModebar();
   } else if (mode === "follow" && follower) {
-    follower.manualTurn();
+    follower.pianistTurned(target);
   }
 }
 
@@ -251,14 +251,15 @@ async function startFollow() {
   if (!state.lesson || mode !== "idle") return;
   const ready = startMic();
   mode = "follow";
+  // Start from the page on screen: the pianist may begin anywhere, and the page is a hint where
   follower = new Follower(state.lesson, {
-    onTurn: (page) => {
+    page: state.page,
+    onTurn: (page, why) => {
       show(page);
-      turnLog.push({ page, time: lastFrameTime, how: "auto" });
-      flashMode(`Turned to page ${page}`);
+      turnLog.push({ page, time: lastFrameTime, how: why === "jump" ? "jump" : "auto" });
+      flashMode(why === "jump" ? `Found you on page ${page}` : `Turned to page ${page}`);
     },
   });
-  show(state.lesson.startPage || 1);
   updateButtons();
   updateModebar();
   try {
@@ -273,8 +274,6 @@ function stopMode() {
   if (mode === "teach") teach = null;
   mode = "idle";
   follower = null;
-  clearTimeout(finishTimer);
-  finishTimer = 0;
   releaseMic();
   updateButtons();
   updateModebar();
@@ -290,7 +289,6 @@ window.pageTurner = {
   turns: turnLog,
 };
 
-let finishTimer = 0;
 function onFrame(frame) {
   lastFrameTime = frame.time;
   const heard = hearing.update(frame);
@@ -300,8 +298,7 @@ function onFrame(frame) {
     if (teach.frames.length % 25 === 0) updateModebar();
   } else if (mode === "follow" && follower) {
     const st = follower.push(frame);
-    if (frame.index % 5 === 0 || st.status === "finished") updateModebar(st);
-    if (st.status === "finished" && !finishTimer) finishTimer = setTimeout(stopMode, 4000);
+    if (frame.index % 5 === 0) updateModebar(st);
   }
 }
 
@@ -320,10 +317,11 @@ function updateModebar(st = follower && follower.state()) {
     modeText.textContent = `Teaching · ${clock(secs)} · ${plural(teach ? teach.turns.length : 0, "page turn")} · turn pages as usual, tap Done at the end`;
   } else if (mode === "follow" && st) {
     progressFill.style.width = `${(st.progress * 100).toFixed(1)}%`;
-    progress.dataset.unsure = String(st.unsure);
+    progress.dataset.unsure = String(st.unsure || st.status !== "following");
     let text;
-    if (st.status === "waiting") text = "Following · start playing from the beginning";
-    else if (st.status === "finished") text = "Following · finished";
+    if (st.status === "waiting") text = "Following · start playing anywhere on this page";
+    else if (st.status === "searching") text = "Following · listening for where you are";
+    else if (st.status === "finished") text = "Following · end of the piece";
     else text = st.unsure ? "Following · not sure where you are" : `Following · ${Math.round(st.progress * 100)}% through`;
     if (performance.now() < flash.until) text = `Following · ${flash.text}`;
     modeText.textContent = text;
