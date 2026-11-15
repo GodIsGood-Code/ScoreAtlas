@@ -1,0 +1,6 @@
+{
+  "name": "page-turner",
+  "private": true,
+  "type": "module",
+  "description": "Sheet music that turns its own pages by listening. Static site, no build step; this file only tells Node the .js files are ES modules."
+}

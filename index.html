@@ -18,47 +18,46 @@
     <header class="rail">
       <div class="ident">
         <span class="mark">Page Turner</span>
-        <span class="tag">Test 2</span>
-        <span class="file" id="fileName">Loading the sample score…</span>
+        <span class="tag">Test 3</span>
+        <span class="file" id="fileName">Loading…</span>
       </div>
       <div class="controls">
-        <button id="openBtn" class="btn primary" type="button">Open PDF</button>
+        <button id="openBtn" class="btn" type="button">Open PDF</button>
         <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
         <div class="counter">
           <button id="prevBtn" class="btn icon" type="button" aria-label="Previous page">‹</button>
           <output id="pageNum" aria-live="polite">– / –</output>
           <button id="nextBtn" class="btn icon" type="button" aria-label="Next page">›</button>
         </div>
-        <button id="listenBtn" class="btn listen" type="button" aria-pressed="false">
-          <span class="meter" aria-hidden="true"><i id="listenMeter"></i></span>
-          <span id="listenLabel">Listen</span>
-        </button>
-        <div class="pedal" id="pedal" data-state="nofocus">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="label">Pedal:</span>
-          <span class="key" id="pedalText">tap the music</span>
-        </div>
+        <button id="teachBtn" class="btn mode" type="button" aria-pressed="false">Teach</button>
+        <button id="followBtn" class="btn mode primary" type="button" aria-pressed="false">Follow</button>
         <button id="helpBtn" class="btn icon" type="button" aria-label="Show test steps" aria-expanded="true" aria-controls="card">?</button>
       </div>
     </header>
 
     <main class="stand" id="stand" tabindex="-1" aria-label="Sheet music. Tap the right side for the next page and the left side for the previous page.">
+      <div class="progress" id="progress" hidden><i id="progressFill"></i></div>
+      <div class="modebar" id="modebar" hidden aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="modeText"></span></div>
       <div class="sheet" id="sheet"></div>
       <div class="status" id="status" hidden><span id="statusText"></span></div>
       <div class="toast" id="toast" hidden></div>
     </main>
 
     <aside class="card" id="card" aria-label="Test steps">
-      <h2>Test 2: PDFs, pedal and listening</h2>
+      <h2>Test 3: automatic page turns</h2>
       <ol>
-        <li><b>Open one of your PDFs</b> with the Open PDF button.</li>
-        <li><b>Press each pedal.</b> The Pedal box at the top shows the key it sends.</li>
-        <li><b>Tap Listen</b>, allow the microphone, and play a few notes or chords. The bars should jump to the notes you play.</li>
+        <li><b>Open a piece</b> with at least two pages.</li>
+        <li><b>Tap Teach</b>, wait a second, then play it from the beginning, turning pages with your pedal as usual. Tap <b>Done</b> at the end.</li>
+        <li><b>Tap Follow</b>, wait a second, then play it again without touching the pedal. The pages should turn by themselves.</li>
       </ol>
-      <p class="seen">Keys received: <span id="keysSeen">none yet</span></p>
+      <p class="lesson" id="lessonInfo"></p>
+      <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
 
       <section class="ear" aria-label="Notes the app hears">
-        <p class="heard"><span class="label">Hearing:</span> <b id="earHeard">tap Listen to start</b></p>
+        <div class="ear-head">
+          <p class="heard"><span class="label">Hearing:</span> <b id="earHeard"></b></p>
+          <button id="micBtn" class="btn small" type="button" aria-pressed="false">Check microphone</button>
+        </div>
         <div class="keys" id="earKeys"></div>
         <div class="level" aria-hidden="true"><i id="earLevel"></i></div>
         <p class="note" id="earNote" hidden></p>

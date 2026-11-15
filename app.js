@@ -1,6 +1,11 @@
-// Page Turner: shows a PDF one page at a time and turns pages from a Bluetooth pedal,
-// taps or swipes. Test 2 adds a listening check for the microphone.
-import { Listener, NOTE_NAMES, BLACK_KEYS } from "./listen.js";
+// Page Turner: shows a PDF one page at a time and turns pages from a Bluetooth pedal, taps or swipes.
+// Test 3 adds Teach (play the piece once, turning pages yourself) and Follow (play it again and the
+// app turns the pages by listening).
+import { Microphone } from "./listen.js";
+import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
+import { Hearing } from "./engine/hearing.js";
+import { makeLesson, Follower } from "./engine/follower.js";
+import { loadLesson, saveLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
@@ -8,10 +13,15 @@ const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
 const $ = (id) => document.getElementById(id);
 const stand = $("stand"), sheet = $("sheet"), pageNum = $("pageNum");
 const fileName = $("fileName"), fileInput = $("fileInput");
-const pedal = $("pedal"), pedalText = $("pedalText"), keysSeen = $("keysSeen");
-const card = $("card"), helpBtn = $("helpBtn");
+const card = $("card"), helpBtn = $("helpBtn"), keysSeen = $("keysSeen");
+const teachBtn = $("teachBtn"), followBtn = $("followBtn"), micBtn = $("micBtn");
+const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
-const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "" };
+const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
+let mode = "idle"; // idle, teach or follow
+let teach = null; // { frames, turns } while teaching
+let follower = null;
+let micCheck = false;
 
 /* ---------- PDF loading ---------- */
 let libPromise = null;
@@ -35,24 +45,32 @@ async function openPdf(data, name) {
     const lib = await loadPdfLib();
     pdf = await lib.getDocument({ data, isEvalSupported: false }).promise;
   } catch (err) {
-    if (token !== openToken) return;
+    if (token !== openToken) return false;
     const locked = err && err.name === "PasswordException";
     setStatus(locked
       ? `${name} is password-protected. Remove the password, then open it again.`
       : `Couldn't open ${name}. Check that it's a PDF file and try again.`, "error");
     if (!state.pdf) fileName.textContent = "No PDF open";
-    return;
+    return false;
   }
-  if (token !== openToken) { pdf.destroy(); return; } // a newer file was opened meanwhile
+  if (token !== openToken) { pdf.destroy(); return false; } // a newer file was opened meanwhile
+  stopMode();
   const old = state.pdf;
   dropCache(() => true);
-  state.pdf = pdf;
-  state.count = pdf.numPages;
-  state.page = 1;
+  Object.assign(state, { pdf, count: pdf.numPages, page: 1, name, lesson: null });
+  state.key = `${(pdf.fingerprints && pdf.fingerprints[0]) || name}:${pdf.numPages}`;
   fileName.textContent = name;
   fileName.title = name;
   if (old) old.destroy();
   await show(1);
+  const key = state.key;
+  const lesson = await loadLesson(key);
+  if (state.key === key) {
+    state.lesson = lesson || null;
+    updateLessonInfo();
+    updateButtons();
+  }
+  return true;
 }
 
 /* ---------- Drawing pages ---------- */
@@ -125,12 +143,20 @@ async function show(n) {
   near.forEach((p) => render(p).catch(() => {}));
 }
 
+// A turn by the pianist: pedal, tap, swipe or the arrow buttons
 function turn(step) {
   if (!state.pdf) return;
   const target = state.page + step;
   if (target < 1) return toast("First page");
   if (target > state.count) return toast("Last page");
   show(target);
+  if (mode !== "idle") turnLog.push({ page: target, time: lastFrameTime, how: "pianist" });
+  if (mode === "teach" && teach) {
+    teach.turns.push({ frame: Math.max(0, teach.frames.length - 1), page: target });
+    updateModebar();
+  } else if (mode === "follow" && follower) {
+    follower.manualTurn();
+  }
 }
 
 function updateCounter() {
@@ -159,13 +185,251 @@ function setStatus(text, kind) {
   $("statusText").textContent = text || "";
 }
 let toastTimer = 0;
-function toast(text) {
+function toast(text, ms = 1400) {
   const el = $("toast");
   el.textContent = text;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 1200);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/* ---------- Teach and Follow ---------- */
+const mic = new Microphone(onFrame);
+let micStarting = null;
+function startMic() {
+  if (mic.running && !micStarting) return Promise.resolve();
+  if (!micStarting) micStarting = mic.start().finally(() => { micStarting = null; });
+  return micStarting;
+}
+function releaseMic() {
+  if (!micCheck && mode === "idle" && mic.running) mic.stop();
+}
+
+async function startTeach() {
+  if (!state.pdf || mode !== "idle") return;
+  const ready = startMic(); // must begin inside the tap
+  mode = "teach";
+  teach = { frames: [], turns: [] };
+  show(1);
+  updateButtons();
+  updateModebar();
+  try {
+    await ready;
+  } catch (err) {
+    stopMode();
+    showMicProblem(err);
+  }
+}
+
+function finishTeach() {
+  const t = teach;
+  mode = "idle";
+  teach = null;
+  releaseMic();
+  updateButtons();
+  updateModebar();
+  if (!t) return;
+  let lesson;
+  try {
+    lesson = makeLesson(t.frames, t.turns, { name: state.name, pages: state.count, startPage: 1, taughtAt: Date.now() });
+  } catch {
+    toast("No music was heard, so nothing was learned. Check the microphone and try again.", 4000);
+    return;
+  }
+  delete lesson.source;
+  state.lesson = lesson;
+  updateLessonInfo();
+  updateButtons();
+  toast(`Learned ${clock(lesson.length / FRAME_RATE)} of music and ${plural(lesson.turns.length, "page turn")}`, 3000);
+  keepData();
+  saveLesson(state.key, lesson).catch(() => toast("Couldn't save what was learned on this iPad.", 3000));
+}
+
+async function startFollow() {
+  if (!state.lesson || mode !== "idle") return;
+  const ready = startMic();
+  mode = "follow";
+  follower = new Follower(state.lesson, {
+    onTurn: (page) => {
+      show(page);
+      turnLog.push({ page, time: lastFrameTime, how: "auto" });
+      flashMode(`Turned to page ${page}`);
+    },
+  });
+  show(state.lesson.startPage || 1);
+  updateButtons();
+  updateModebar();
+  try {
+    await ready;
+  } catch (err) {
+    stopMode();
+    showMicProblem(err);
+  }
+}
+
+function stopMode() {
+  if (mode === "teach") teach = null;
+  mode = "idle";
+  follower = null;
+  clearTimeout(finishTimer);
+  finishTimer = 0;
+  releaseMic();
+  updateButtons();
+  updateModebar();
+}
+
+// For automated tests and troubleshooting: the audio clock, and every page turn with its time
+let lastFrameTime = 0;
+const turnLog = [];
+window.pageTurner = {
+  get audioTime() { return lastFrameTime; },
+  get mode() { return mode; },
+  get page() { return state.page; },
+  turns: turnLog,
+};
+
+let finishTimer = 0;
+function onFrame(frame) {
+  lastFrameTime = frame.time;
+  const heard = hearing.update(frame);
+  if (!card.hidden) drawEar(heard); // no need to redraw the note display while it's hidden
+  if (mode === "teach" && teach) {
+    teach.frames.push({ chroma: frame.chroma, onset: frame.onset, sounding: frame.sounding });
+    if (teach.frames.length % 25 === 0) updateModebar();
+  } else if (mode === "follow" && follower) {
+    const st = follower.push(frame);
+    if (frame.index % 5 === 0 || st.status === "finished") updateModebar(st);
+    if (st.status === "finished" && !finishTimer) finishTimer = setTimeout(stopMode, 4000);
+  }
+}
+
+let flash = { text: "", until: 0 };
+function flashMode(text) {
+  flash = { text, until: performance.now() + 1500 };
+  updateModebar();
+}
+
+function updateModebar(st = follower && follower.state()) {
+  modebar.hidden = mode === "idle";
+  modebar.dataset.mode = mode;
+  progress.hidden = mode !== "follow";
+  if (mode === "teach") {
+    const secs = teach ? teach.frames.length / FRAME_RATE : 0;
+    modeText.textContent = `Teaching · ${clock(secs)} · ${plural(teach ? teach.turns.length : 0, "page turn")} · turn pages as usual, tap Done at the end`;
+  } else if (mode === "follow" && st) {
+    progressFill.style.width = `${(st.progress * 100).toFixed(1)}%`;
+    progress.dataset.unsure = String(st.unsure);
+    let text;
+    if (st.status === "waiting") text = "Following · start playing from the beginning";
+    else if (st.status === "finished") text = "Following · finished";
+    else text = st.unsure ? "Following · not sure where you are" : `Following · ${Math.round(st.progress * 100)}% through`;
+    if (performance.now() < flash.until) text = `Following · ${flash.text}`;
+    modeText.textContent = text;
+  }
+}
+
+function updateButtons() {
+  teachBtn.textContent = mode === "teach" ? "Done" : "Teach";
+  teachBtn.setAttribute("aria-pressed", String(mode === "teach"));
+  teachBtn.disabled = !state.pdf || mode === "follow";
+  followBtn.textContent = mode === "follow" ? "Stop" : "Follow";
+  followBtn.setAttribute("aria-pressed", String(mode === "follow"));
+  followBtn.disabled = !state.lesson || mode === "teach";
+  followBtn.title = state.lesson ? "" : "Teach this piece first";
+  micBtn.textContent = micCheck ? "Stop" : "Check microphone";
+  micBtn.setAttribute("aria-pressed", String(micCheck));
+}
+
+function updateLessonInfo() {
+  const el = $("lessonInfo");
+  if (!state.pdf) el.textContent = "";
+  else if (!state.lesson) el.textContent = "This piece hasn't been taught yet.";
+  else el.textContent = `This piece is taught: ${clock(state.lesson.length / FRAME_RATE)} of music, ${plural(state.lesson.turns.length, "page turn")}.`;
+}
+
+teachBtn.addEventListener("click", () => {
+  if (mode === "teach") finishTeach();
+  else startTeach();
+  backToMusic();
+});
+followBtn.addEventListener("click", () => {
+  if (mode === "follow") stopMode();
+  else startFollow();
+  backToMusic();
+});
+
+/* ---------- Microphone check and note display ---------- */
+const hearing = new Hearing();
+const earKeys = $("earKeys"), earHeard = $("earHeard"), earLevel = $("earLevel"), earNote = $("earNote");
+const keyBars = NOTE_NAMES.map((name, i) => {
+  const col = document.createElement("div");
+  col.className = BLACK_KEYS.has(i) ? "key-col black" : "key-col";
+  col.innerHTML = `<div class="bar"><i></i></div><div class="name">${name}</div>`;
+  earKeys.append(col);
+  return { col, fill: col.querySelector("i") };
+});
+
+function drawEar(h) {
+  keyBars.forEach(({ col, fill }, q) => {
+    fill.style.transform = `scaleY(${Math.min(1, h.level[q]).toFixed(3)})`;
+    col.classList.toggle("on", h.heard.includes(q));
+  });
+  earHeard.textContent = h.quiet ? "quiet" : h.heard.length ? h.heard.map((q) => NOTE_NAMES[q]).join(" · ") : "…";
+  const loud = h.quiet ? 0 : Math.max(...h.level);
+  earLevel.style.width = `${(loud * 100).toFixed(0)}%`;
+}
+
+function clearEar() {
+  keyBars.forEach(({ col, fill }) => { fill.style.transform = "scaleY(0)"; col.classList.remove("on"); });
+  earHeard.textContent = "the microphone is off";
+  earLevel.style.width = "0";
+}
+
+function showMicProblem(err) {
+  const name = err && err.name;
+  let text = "The microphone couldn't start. Reload the page and try again.";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    text = "Microphone access is off for this page. In Safari, tap the aA button in the address bar, choose Website Settings, set Microphone to Allow, then reload the page.";
+  } else if (name === "NotFoundError" || name === "OverconstrainedError") text = "No microphone was found on this device.";
+  else if (name === "NotReadableError") text = "Another app is using the microphone. Close it, then try again.";
+  else if (name === "NotSupportedError") text = "This page can't reach the microphone here. Open the app at its own web address in Safari.";
+  earNote.textContent = text;
+  earNote.hidden = false;
+  setCard(true);
+  clearEar();
+}
+
+micBtn.addEventListener("click", async () => {
+  earNote.hidden = true;
+  if (micCheck) {
+    micCheck = false;
+    releaseMic();
+    if (!mic.running) clearEar();
+    updateButtons();
+    return;
+  }
+  micCheck = true;
+  updateButtons();
+  try {
+    await startMic();
+  } catch (err) {
+    micCheck = false;
+    updateButtons();
+    showMicProblem(err);
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) return;
+  if (mode !== "idle") toast(mode === "teach" ? "Teaching stopped because the app went into the background." : "Following stopped because the app went into the background.", 4000);
+  micCheck = false;
+  stopMode();
+  if (mic.running) mic.stop();
+  clearEar();
+  updateButtons();
+});
 
 /* ---------- Pedal and keyboard ---------- */
 const NEXT = new Set(["ArrowRight", "ArrowDown", "PageDown", " ", "Spacebar", "Enter"]);
@@ -175,26 +439,12 @@ const KEY_NAMES = {
   PageDown: "Page Down", PageUp: "Page Up", " ": "Space", Spacebar: "Space", Enter: "Enter",
 };
 const seen = [];
-let lastPress = "";
 
 function keyLabel(e) {
   if (KEY_NAMES[e.key]) return KEY_NAMES[e.key];
   if (e.key && e.key.length === 1) return e.key.toUpperCase();
   if (e.key && e.key !== "Unidentified") return e.key;
   return e.code || "Unknown key";
-}
-
-function refreshPedal() {
-  if (!document.hasFocus()) {
-    pedal.dataset.state = "nofocus";
-    pedalText.textContent = "tap the music";
-  } else if (lastPress) {
-    pedal.dataset.state = "pressed";
-    pedalText.textContent = lastPress;
-  } else {
-    pedal.dataset.state = "ready";
-    pedalText.textContent = "ready";
-  }
 }
 
 window.addEventListener("keydown", (e) => {
@@ -205,21 +455,14 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (e.repeat) return;
   const label = keyLabel(e);
-  const action = NEXT.has(e.key) ? 1 : PREV.has(e.key) ? -1 : 0;
-  lastPress = action ? `${label} → ${action > 0 ? "next" : "back"}` : `${label} (not used yet)`;
   if (!seen.includes(label)) {
     seen.push(label);
     keysSeen.textContent = seen.join(", ");
   }
-  refreshPedal();
-  pedal.classList.remove("flash");
-  void pedal.offsetWidth;
-  pedal.classList.add("flash");
   keepAwake();
-  if (action) turn(action);
+  if (NEXT.has(e.key)) turn(1);
+  else if (PREV.has(e.key)) turn(-1);
 });
-window.addEventListener("focus", refreshPedal);
-window.addEventListener("blur", refreshPedal);
 
 /* ---------- Taps and swipes ---------- */
 let down = null;
@@ -240,95 +483,6 @@ stand.addEventListener("pointerup", (e) => {
   }
 });
 stand.addEventListener("pointercancel", () => { down = null; });
-stand.addEventListener("focus", refreshPedal);
-
-/* ---------- Listening check ---------- */
-const listenBtn = $("listenBtn"), listenLabel = $("listenLabel"), listenMeter = $("listenMeter");
-const earHeard = $("earHeard"), earLevel = $("earLevel"), earNote = $("earNote"), earKeys = $("earKeys");
-const keyBars = NOTE_NAMES.map((name, i) => {
-  const col = document.createElement("div");
-  col.className = BLACK_KEYS.has(i) ? "key-col black" : "key-col";
-  col.innerHTML = `<div class="bar"><i></i></div><div class="name">${name}</div>`;
-  earKeys.append(col);
-  return { col, fill: col.querySelector("i") };
-});
-const smooth = new Float32Array(12);
-let listener = null;
-
-function drawEar({ levelDb, chroma }) {
-  const loudness = Math.max(0, Math.min(1, (levelDb + 70) / 60));
-  earLevel.style.width = `${(loudness * 100).toFixed(1)}%`;
-  listenMeter.style.height = `${(loudness * 100).toFixed(1)}%`;
-  const quiet = levelDb < -58;
-  let max = 0;
-  for (let i = 0; i < 12; i++) max = Math.max(max, chroma[i]);
-  for (let i = 0; i < 12; i++) {
-    const v = quiet || max === 0 ? 0 : chroma[i] / max;
-    smooth[i] = smooth[i] * 0.55 + v * 0.45;
-  }
-  const loudest = [...smooth.keys()].sort((a, b) => smooth[b] - smooth[a]);
-  const heard = quiet ? [] : loudest.filter((i) => smooth[i] > 0.55).slice(0, 4).sort((a, b) => a - b);
-  keyBars.forEach(({ col, fill }, i) => {
-    fill.style.transform = `scaleY(${smooth[i].toFixed(3)})`;
-    col.classList.toggle("on", heard.includes(i));
-  });
-  earHeard.textContent = quiet ? "play a few notes or a chord" : heard.length ? heard.map((i) => NOTE_NAMES[i]).join(" · ") : "…";
-}
-
-function setListening(on) {
-  listenBtn.setAttribute("aria-pressed", String(on === true));
-  listenLabel.textContent = on === true ? "Stop" : on === "starting" ? "Starting…" : "Listen";
-  if (on !== true) {
-    smooth.fill(0);
-    keyBars.forEach(({ col, fill }) => { fill.style.transform = "scaleY(0)"; col.classList.remove("on"); });
-    earLevel.style.width = "0";
-    listenMeter.style.height = "0";
-    if (on === false) earHeard.textContent = "tap Listen to start";
-  }
-}
-
-function micProblem(err) {
-  const name = err && err.name;
-  if (name === "NotAllowedError" || name === "SecurityError") {
-    return "Microphone access is off for this page. In Safari, tap the aA button in the address bar, choose Website Settings, set Microphone to Allow, then reload the page.";
-  }
-  if (name === "NotFoundError" || name === "OverconstrainedError") return "No microphone was found on this device.";
-  if (name === "NotReadableError") return "Another app is using the microphone. Close it, then tap Listen again.";
-  if (name === "NotSupportedError") return "This page can't reach the microphone here. Open the app at its own web address in Safari.";
-  return "The microphone couldn't start. Reload the page and tap Listen again.";
-}
-
-listenBtn.addEventListener("click", async () => {
-  if (listener) {
-    listener.stop();
-    listener = null;
-    setListening(false);
-    backToMusic();
-    return;
-  }
-  setCard(true);
-  earNote.hidden = true;
-  setListening("starting");
-  const l = new Listener({ onFrame: drawEar });
-  try {
-    await l.start();
-    listener = l;
-    setListening(true);
-    earHeard.textContent = "play a few notes or a chord";
-  } catch (err) {
-    setListening(false);
-    earNote.textContent = micProblem(err);
-    earNote.hidden = false;
-  }
-  backToMusic();
-});
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden && listener) {
-    listener.stop();
-    listener = null;
-    setListening(false);
-  }
-});
 
 /* ---------- Buttons ---------- */
 function backToMusic() { stand.focus({ preventScroll: true }); }
@@ -347,7 +501,8 @@ fileInput.addEventListener("change", async () => {
     setStatus(`Couldn't read ${file.name}. If it's in iCloud, download it to the iPad first.`, "error");
     return;
   }
-  openPdf(data, file.name);
+  const copy = data.slice(); // the PDF reader takes over `data`, so keep our own copy to save
+  if (await openPdf(data, file.name)) saveLastFile(file.name, copy).catch(() => {});
 });
 function setCard(open) {
   card.hidden = !open;
@@ -369,17 +524,21 @@ async function keepAwake() {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 
-/* ---------- Start with the sample score ---------- */
-refreshPedal();
+/* ---------- Start: reopen the last piece, or the sample ---------- */
 updateCounter();
+updateButtons();
+clearEar();
 (async () => {
+  const last = await loadLastFile();
+  if (openToken === 0 && last && (await openPdf(last.bytes, last.name))) return;
+  const before = openToken; // if the pianist opens a file meanwhile, leave it alone
   try {
     const res = await fetch(SAMPLE.url);
     if (!res.ok) throw new Error(String(res.status));
     const data = new Uint8Array(await res.arrayBuffer());
-    if (!state.pdf && openToken === 0) await openPdf(data, SAMPLE.name);
+    if (openToken === before) await openPdf(data, SAMPLE.name);
   } catch {
-    if (state.pdf || openToken > 0) return;
+    if (state.pdf || openToken !== before) return;
     fileName.textContent = "No PDF open";
     setStatus("Open one of your PDFs to begin.");
   }
