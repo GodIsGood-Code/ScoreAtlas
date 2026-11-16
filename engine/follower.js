@@ -48,6 +48,7 @@ export const FOLLOW_SETTINGS = {
   // random playing at about 0.65–0.9. The same checks, with these limits:
   score: { goodRatio: 0.6, strongRatio: 0.42, turnRatio: 0.65, lostRatio: 0.72, jumpMargin: 0.06, alikeMargin: 0.08, trackRatio: 0.55, tail: false },
   ambiguity: 1.12, // results within this ratio of the best count as equally good (e.g. a repeat) ...
+  pageAmbiguity: 1.3, // ... and within this ratio, a copy on the page showing (or the next) still counts as the same music
   alikeMargin: 0.04, // ... or within this much of it: tiny differences between identical passages are noise
   jumpRatio: 0.7, // a jump needs a place this much better than where we think the pianist is ...
   jumpMargin: 0.03, // ... and better by at least this much (identical passages differ by about 0.015 at most)
@@ -183,6 +184,15 @@ export class Follower {
     const s = (seconds) => Math.max(1, Math.round(seconds * FRAME_RATE));
     lesson = flatten(lesson);
     this.lesson = lesson;
+    // A turn learned from sheet music never comes before the last bar of the old page has begun (the pianist must
+    // still see that bar): the earliest moment for each turn, a fifth of a second into that bar
+    for (const t of lesson.turns) {
+      t.earliest = 0;
+      if (!lesson.fromScore[t.frame]) continue;
+      let j = t.frame;
+      while (j > lesson.startOf[t.frame] && lesson.played[j - 1] === lesson.played[t.frame]) j--;
+      t.earliest = Math.min(t.frame, j + Math.round(0.2 * FRAME_RATE));
+    }
     this.cfg = settings;
     this.onTurn = onTurn;
     this.M = lesson.length;
@@ -347,7 +357,7 @@ export class Follower {
     if (this.holdTurns || this.unsure || this.status !== "following" || this.racing()) { this.streak = 0; return; }
     while (this.turnIndex < turns.length) {
       const t = turns[this.turnIndex];
-      if (this.position >= t.frame - this.aheadOf(t)) {
+      if (this.position >= Math.max(t.frame - this.aheadOf(t), t.earliest || 0)) {
         if (++this.streak >= 2 && this.confirmed()) {
           this.turnIndex++;
           this.streak = 0;
@@ -402,7 +412,11 @@ export class Follower {
     const best = candidates[0];
     if (best.cost > this.cfg.goodCost || best.cost > this.limits(best.frame).goodRatio * background) return null;
     const limit = Math.max(best.cost * this.cfg.ambiguity, best.cost + this.limits(best.frame).alikeMargin);
-    const alike = candidates.filter((c) => c.cost <= limit);
+    // Common sense: a copy of this music on the page showing (or the next) wins even when it fits a little less
+    // well than one further away; small differences between copies are mostly noise
+    const wide = Math.max(best.cost * this.cfg.pageAmbiguity, best.cost + 2 * this.limits(best.frame).alikeMargin);
+    const onPage = candidates.filter((c) => c.cost <= wide && c.cost <= this.limits(c.frame).goodRatio * background && c.cost <= this.cfg.goodCost);
+    const alike = candidates.filter((c) => c.cost <= limit || (onPage.includes(c) && Math.abs(this.pageAt[c.frame] - this.page) <= 1));
     if (alike.length === 1) return best;
     // Music that sounds the same in several places only moves us to one on the page the pianist is looking at,
     // or else the page next to it (going back over a page turn is common), earlier first. Further away they may be
@@ -430,6 +444,26 @@ export class Follower {
     return alike.sort((a, b) => cont(a) - cont(b) || a.frame - b.frame)[0];
   }
 
+  // The best place for the last moment of playing within a few seconds after where the pianist was lost, if it fits
+  // well; else null
+  nearLost() {
+    const F = this.frames;
+    const tail = this.recent.slice(-F.minQuery);
+    let sounding = 0;
+    for (const f of tail) if (f.sounding) sounding++;
+    if (sounding < 0.75 * F.minQuery) return null;
+    const { row, background } = this.searcher.search(tail);
+    if (!row) return null;
+    const at = this.lostAt.position, se = this.searcher;
+    const c0 = se.coarseIndex(Math.max(this.lesson.startOf[at], at - FRAME_RATE));
+    const c1 = se.coarseIndex(Math.min(this.lesson.endOf[at] - 1, at + 5 * FRAME_RATE));
+    let best = -1;
+    for (let c = c0; c <= c1; c++) if (best < 0 || row[c] < row[best]) best = c;
+    if (best < 0) return null;
+    const frame = se.endFrame[best];
+    return row[best] <= this.limits(frame).goodRatio * background && row[best] <= this.cfg.goodCost ? frame : null;
+  }
+
   enoughToLookUp() {
     let sounding = 0;
     for (const f of this.recent) if (f.sounding) sounding++;
@@ -452,6 +486,17 @@ export class Follower {
         pick = tailPick;
         strong = true;
       }
+    }
+    // Just lost the pianist? The last moment alone, compared with the few bars right after where they were, often
+    // settles it sooner (what came before may be a long held chord or a hesitation the lesson doesn't have)
+    if (!strong && this.lostAt && this.clock - this.lostAt.clock < 10 * FRAME_RATE) {
+      const near = this.nearLost();
+      if (near) {
+        const nv = this.nearVote;
+        const agrees = nv && Math.abs(near - (nv.frame + this.clock - nv.clock)) <= this.frames.jump;
+        this.nearVote = { frame: near, clock: this.clock };
+        if (agrees) { this.moveTo(near); return; }
+      } else this.nearVote = null;
     }
     if (!pick) { this.pending = null; return; }
     // Just lost the pianist? They most likely picked up where they were (playing something else doesn't move
@@ -560,6 +605,7 @@ export class Follower {
     this.flip = null;
     this.pending = null;
     this.farVote = null;
+    this.nearVote = null;
     this.verdict = null;
     this.misfit = 0;
     this.lostAt = null;

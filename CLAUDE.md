@@ -6,7 +6,16 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 9 (current):** practice tools (roadmap steps 6–8) plus fixes from the owner's Test 8 run. Practice: Follow
+- **Test 9 feedback and fixes (published before Test 10):** the owner: "went pretty well"; turns and following much
+  better; a little trouble from the bottom of page 5 to the top of page 6; refrains still occasionally jumped to a
+  copy on another page although the page showing had one; flipped practice skips went decently; loops worked; report
+  "somewhat accurate"; asked for a movable report panel. Their recording: the page 6 turn came during bar 55, they
+  held bar 56 for 4.4 s and the follower was then lost 3.5 s (bars 49–60 repeat the same 4 piano bars). Fixes: a
+  sheet-music turn never comes before the old page's last bar has begun (`earliest` per turn, 0.2 s into that bar);
+  just after losing the pianist, the last 0.8 s is matched against the 5 s after where they were (`nearLost`, two
+  agreeing checks) — lost 0.5 s there now; a copy on the page showing (or the next) wins within 1.3x of the best
+  (`pageAmbiguity`); the report panel and the steps card can be dragged by their title (place kept).
+- **Test 9:** practice tools (roadmap steps 6–8) plus fixes from the owner's Test 8 run. Practice: Follow
   with sheet music keeps a `PracticeLog`; Stop opens a practice report (bars practised most, where they hesitated:
   slowed down, paused, or stopped and went back; tempo bar by bar for the longest run as a graph with a tap tooltip
   and a table; bars on the page tinted by how often they were played); a summary of each session is kept on the iPad

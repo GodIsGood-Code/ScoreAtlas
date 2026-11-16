@@ -95,6 +95,9 @@ const barName = (k) => score.measures[order[k]].number;
     now = f.time;
     fol.push(f);
     if (k >= a && fol.status === "following") errs.push((fol.position - refAt[k]) / 50);
+    if (process.env.TRACE_RUN && k % 25 === 0 && f.time >= Number(process.env.TRACE_RUN.split(",")[0]) && f.time <= Number(process.env.TRACE_RUN.split(",")[1])) {
+      console.log(`    ${f.time.toFixed(1)}s truth bar ${barName(sec.played[refAt[k]])}; ${fol.status}${fol.unsure ? " unsure" : ""} ${fol.status === "following" ? "bar " + barName(sec.played[fol.position]) : ""}`);
+    }
     if (k % 2 === 0 && k >= a) {
       const sure = fol.status === "following" && !fol.unsure;
       const shown = marker.update(sure ? fol.lesson.played[fol.position] : -1, (fol.moves || 0) !== moves);

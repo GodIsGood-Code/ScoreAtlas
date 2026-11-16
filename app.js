@@ -784,6 +784,43 @@ function flashBar(m, tries = 0) {
   setTimeout(() => el.remove(), 1600);
 }
 $("reportClose").addEventListener("click", () => { setReport(false); backToMusic(); });
+
+// Panels can be dragged by their title to anywhere on the screen (so they don't hide the music); the place is kept
+function makeMovable(panel, handle, key) {
+  const place = (x, y) => {
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    x = Math.max(8, Math.min(window.innerWidth - w - 8, x));
+    y = Math.max(8, Math.min(window.innerHeight - Math.min(h, 120) - 8, y));
+    Object.assign(panel.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
+    return { x, y };
+  };
+  let drag = null;
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    const r = panel.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const at = place(e.clientX - drag.dx, e.clientY - drag.dy);
+    try { localStorage.setItem(key, JSON.stringify(at)); } catch {}
+  });
+  const end = () => { drag = null; };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+  // back where it was left (kept on screen if the iPad was turned since)
+  const restore = () => {
+    let at = null;
+    try { at = JSON.parse(localStorage.getItem(key) || "null"); } catch {}
+    if (at && !panel.hidden) place(at.x, at.y);
+  };
+  new ResizeObserver(restore).observe(panel);
+  window.addEventListener("resize", restore);
+}
+makeMovable(reportPanel, reportPanel.querySelector(".report-head"), "pt-report-place");
+makeMovable(card, card.querySelector("h2"), "pt-card-place");
 $("heatToggle").addEventListener("change", (e) => { heatOn = e.target.checked; drawOverlay(); });
 
 const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps

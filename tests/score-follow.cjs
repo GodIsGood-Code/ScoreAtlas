@@ -72,6 +72,13 @@ const PERF = path.join(__dirname, 'output/perf');
   check('report shows a tempo graph', (await page.$('#reportBody .tempo-line')) !== null);
   check('bars on the page are tinted by practice', (await page.$$('.heat-mark')).length > 0, `${(await page.$$('.heat-mark')).length} bars`);
   await page.screenshot({ path: path.join(__dirname, 'output/practice-report.png') });
+  // the report can be dragged out of the way by its title
+  const before = await page.$eval('#report', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  const head = await page.$eval('#report .report-head h2', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + 10, y: r.y + r.height / 2 }; });
+  await page.mouse.move(head.x, head.y); await page.mouse.down();
+  await page.mouse.move(head.x - 300, head.y - 500, { steps: 8 }); await page.mouse.up();
+  const after = await page.$eval('#report', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  check('the report moves when dragged by its title', before.x - after.x > 250 && before.y - after.y > 400, `from ${Math.round(before.x)},${Math.round(before.y)} to ${Math.round(after.x)},${Math.round(after.y)}`);
   await page.click('#reportClose');
   // Loop: tap Loop, then the first and the third bar on the page
   await page.click('#loopBtn');
