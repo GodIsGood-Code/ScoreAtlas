@@ -76,9 +76,9 @@ const PERF = path.join(__dirname, 'output/perf');
   const before = await page.$eval('#report', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; });
   const head = await page.$eval('#report .report-head h2', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + 10, y: r.y + r.height / 2 }; });
   await page.mouse.move(head.x, head.y); await page.mouse.down();
-  await page.mouse.move(head.x - 300, head.y - 500, { steps: 8 }); await page.mouse.up();
+  await page.mouse.move(head.x - 300, head.y + 300, { steps: 8 }); await page.mouse.up();
   const after = await page.$eval('#report', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; });
-  check('the report moves when dragged by its title', before.x - after.x > 250 && before.y - after.y > 400, `from ${Math.round(before.x)},${Math.round(before.y)} to ${Math.round(after.x)},${Math.round(after.y)}`);
+  check('the report moves when dragged by its title', before.x - after.x > 250 && after.y - before.y > 250, `from ${Math.round(before.x)},${Math.round(before.y)} to ${Math.round(after.x)},${Math.round(after.y)}`);
   // Listen back: the recording plays with the highlight and pages following
   check('the report offers listening back', await page.isVisible('#replayBtn'));
   check('bars in the report have a listen button', (await page.$$('#reportBody .listen-btn:not([hidden])')).length > 0);
@@ -110,6 +110,7 @@ const PERF = path.join(__dirname, 'output/perf');
   // Sheet music options: type the first bar of page 2 and apply; the choice is kept after a reload
   check('sheet music options shown', await page.isVisible('#scoreOpts'));
   check('no part list for a one-part piece', !(await page.isVisible('#partsBox')));
+  await page.$eval('#scoreOpts', (d) => { d.open = true; }); // a fold-out section
   await page.fill('#barsInput', '9');
   await page.evaluate(() => { document.querySelector('#toast').textContent = ''; });
   await page.click('#applyBtn');

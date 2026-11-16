@@ -1,4 +1,4 @@
-// Page Turner: shows a PDF one page at a time and turns pages from a Bluetooth pedal, taps or swipes.
+// ScoreAtlas (the app; the project is called page-turner): shows a PDF one page at a time and turns pages from a Bluetooth pedal, taps or swipes.
 // Teach: play the piece, or any section of it, turning pages yourself; sections add up. Sheet music: add the
 // piece's MusicXML (from Audiveris) and the app learns it without teaching. Follow: play from anywhere and the app
 // turns the pages by listening, keeping up with practice, and highlights the measure being played.
@@ -95,7 +95,7 @@ async function openPdf(data, name) {
   dropCache(() => true);
   Object.assign(state, { pdf, count: pdf.numPages, page: 1, name, lesson: null });
   state.key = `${(pdf.fingerprints && pdf.fingerprints[0]) || name}:${pdf.numPages}`;
-  fileName.textContent = name;
+  fileName.textContent = name.replace(/\.pdf$/i, "");
   fileName.title = name;
   if (old) old.destroy();
   await show(1);
@@ -496,18 +496,23 @@ function updateModebar(st = follower && follower.state()) {
 
 function updateButtons() {
   forgetBtn.hidden = !sectionsOf(state.lesson).length || mode !== "idle";
-  teachBtn.textContent = mode === "teach" ? "Done" : "Teach";
+  teachBtn.textContent = mode === "teach" ? "Done teaching" : "Teach";
   teachBtn.setAttribute("aria-pressed", String(mode === "teach"));
   teachBtn.disabled = !state.pdf || mode === "follow" || mode === "replay";
-  followBtn.textContent = mode === "follow" ? "Stop" : "Follow";
+  followBtn.querySelector(".lbl").textContent = mode === "follow" ? "Stop" : "Follow";
   followBtn.setAttribute("aria-pressed", String(mode === "follow"));
-  followBtn.disabled = !state.lesson || mode === "teach" || mode === "replay";
-  followBtn.title = state.lesson ? "" : "Add this piece's sheet music or teach it first";
+  // without sheet music or teaching, Follow explains what to do instead of doing nothing
+  followBtn.dataset.ready = String(!!state.lesson);
+  followBtn.disabled = !state.pdf || mode === "teach" || mode === "replay";
+  $("teachDone").hidden = mode !== "teach";
+  $("pieceTitle").textContent = state.pdf ? fileName.textContent : "ScoreAtlas";
+  $("practiceNote").hidden = !!lastReport || !!lastRecording;
   scoreBtn.disabled = !state.pdf || mode !== "idle";
   applyBtn.disabled = mode !== "idle";
   const sec = scoreSectionOf();
   loopBtn.hidden = !(sec && sec.layout && sec.layout.some(Boolean));
-  loopBtn.textContent = loopPick ? "Cancel" : loop ? "Loop off" : "Loop";
+  loopBtn.querySelector(".lbl").textContent = loopPick ? "Cancel" : loop ? "Loop off" : "Loop";
+  loopBtn.setAttribute("aria-label", loopPick ? "Cancel picking a loop" : loop ? "Loop off" : "Loop a passage");
   loopBtn.setAttribute("aria-pressed", String(!!loop || !!loopPick));
   loopBtn.disabled = mode === "teach" || mode === "replay";
   $("replayBtn").hidden = !lastRecording;
@@ -777,8 +782,8 @@ function finishPractice() {
 }
 
 function setReport(open) {
+  if (open) closePanels("report");
   reportPanel.hidden = !open;
-  if (open) setCard(false);
   drawOverlay();
   updateButtons();
 }
@@ -982,7 +987,7 @@ function makeMovable(panel, handle, key) {
   window.addEventListener("resize", restore);
 }
 makeMovable(reportPanel, reportPanel.querySelector(".report-head"), "pt-report-place");
-makeMovable(card, card.querySelector("h2"), "pt-card-place");
+makeMovable(card, card.querySelector(".panel-head"), "pt-card-place");
 $("heatToggle").addEventListener("change", (e) => { heatOn = e.target.checked; drawOverlay(); });
 
 /* ---------- Record and replay: listen back to the last session with the highlight and pages following ---------- */
@@ -1241,10 +1246,16 @@ forgetBtn.addEventListener("click", () => {
 
 teachBtn.addEventListener("click", () => {
   if (mode === "teach") finishTeach();
-  else startTeach();
+  else { startTeach(); setCard(false); }
   backToMusic();
 });
+$("teachDone").addEventListener("click", () => { if (mode === "teach") finishTeach(); backToMusic(); });
 followBtn.addEventListener("click", () => {
+  if (!state.lesson && mode === "idle") {
+    setCard(true);
+    toast("To follow this piece, add its sheet music or teach it (under Piece)", 3200);
+    return;
+  }
   if (mode === "follow") stopMode();
   else startFollow();
   backToMusic();
@@ -1349,8 +1360,9 @@ const markBar = $("markBar"), markBtn = $("markBtn");
 function setMarkMode(on) {
   marks.markMode = on;
   markBar.hidden = !on;
+  document.body.classList.toggle("marking", on);
   markBtn.setAttribute("aria-pressed", String(on));
-  if (on) { setCard(false); toast(marks.count() ? "Mark: draw with the Pencil or a finger" : "Mark: draw with the Pencil or a finger. (The Pencil also draws when Mark is off.)", 2500); }
+  if (on) { closePanels(); toast("Marking: write with the Pencil or a finger. Tap Done when finished.", 2500); }
 }
 markBtn.addEventListener("click", () => { setMarkMode(!marks.markMode); backToMusic(); });
 function pickTool(kind, color) {
@@ -1575,7 +1587,22 @@ stand.addEventListener("pointercancel", () => { down = null; });
 function backToMusic() { stand.focus({ preventScroll: true }); }
 $("prevBtn").addEventListener("click", () => { turn(-1); backToMusic(); });
 $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
-$("libraryBtn").addEventListener("click", () => { library.open(); });
+$("libraryBtn").addEventListener("click", () => { closePanels("library"); library.open(); });
+// Only one panel at a time (and the View menu closes too)
+function closePanels(except) {
+  if (except !== "card" && !card.hidden) { card.hidden = true; helpBtn.setAttribute("aria-expanded", "false"); }
+  if (except !== "report" && !reportPanel.hidden) { reportPanel.hidden = true; drawOverlay(); }
+  if (except !== "library" && library.isOpen) library.close();
+  viewMenu.hidden = true;
+}
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!viewMenu.hidden) viewMenu.hidden = true;
+  else if (library.isOpen) library.close();
+  else if (!reportPanel.hidden) setReport(false);
+  else if (marks.markMode) setMarkMode(false);
+  else if (!card.hidden) setCard(false);
+});
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files && fileInput.files[0];
   fileInput.value = "";
@@ -1595,6 +1622,7 @@ fileInput.addEventListener("change", async () => {
   }
 });
 function setCard(open) {
+  if (open) { closePanels("card"); updateButtons(); }
   card.hidden = !open;
   helpBtn.setAttribute("aria-expanded", String(open));
   try { localStorage.setItem("pt-steps-hidden", open ? "0" : "1"); } catch {}

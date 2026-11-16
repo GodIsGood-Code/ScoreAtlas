@@ -30,9 +30,15 @@ export class LibraryUI {
     if (tab) { this.tab = tab; this.editing = null; }
     await this.refresh();
     this.panel.hidden = false;
+    const scrim = document.getElementById("scrim");
+    if (scrim) { scrim.hidden = false; scrim.onclick = () => this.close(); }
   }
 
-  close() { this.panel.hidden = true; }
+  close() {
+    this.panel.hidden = true;
+    const scrim = document.getElementById("scrim");
+    if (scrim) scrim.hidden = true;
+  }
 
   async refresh() {
     this.pieces = (await listMeta()).sort((a, b) => (b.opened || 0) - (a.opened || 0));

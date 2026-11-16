@@ -74,22 +74,27 @@ const ORIGIN = 'http://localhost:8765';
   // ---------- Pencil markings ----------
   const unit = await page.$eval('.page', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
   const strokes = async () => pt(() => Object.values(window.pageTurner.marks().pages).reduce((n, l) => n + l.length, 0));
-  // the Pencil draws at any time; a hand resting on the screen meanwhile doesn't turn the page
-  const before = await num();
-  await page.evaluate(({ x, y }) => {
+  const pen = (x, y) => page.evaluate(({ x, y }) => {
     const target = document.querySelector('.page canvas.marks').parentElement;
     const ev = (type, dx, kind = 'pen', id = 7) => target.dispatchEvent(new PointerEvent(type, { pointerType: kind, pointerId: id, clientX: x + dx, clientY: y + dx / 3, pressure: 0.5, bubbles: true, cancelable: true }));
     ev('pointerdown', 0);
     for (let k = 1; k <= 12; k++) ev('pointermove', k * 8);
     ev('pointerdown', 200, 'touch', 9); ev('pointerup', 200, 'touch', 9); // the palm
     ev('pointerup', 100);
-  }, { x: unit.x + unit.w * 0.3, y: unit.y + unit.h * 0.3 });
+  }, { x, y });
+  // without Mark on, the Pencil marks nothing (no accidental marks)
+  await pen(unit.x + unit.w * 0.3, unit.y + unit.h * 0.3);
   await page.waitForTimeout(200);
-  check('the Pencil draws on the music', (await strokes()) === 1, `${await strokes()} strokes`);
+  check('with Mark off, the Pencil doesn\'t mark', (await strokes()) === 0, `${await strokes()} strokes`);
+  // Mark on: the Pencil draws, and a hand resting on the screen meanwhile doesn't turn the page
+  await page.click('#markBtn');
+  const before = await num();
+  await pen(unit.x + unit.w * 0.3, unit.y + unit.h * 0.3);
+  await page.waitForTimeout(200);
+  check('with Mark on, the Pencil draws on the music', (await strokes()) === 1, `${await strokes()} strokes`);
   check('a resting hand doesn\'t turn the page', (await num()) === before);
   await page.waitForTimeout(700); // touches just after the Pencil count as the hand resting
-  // Mark on: a finger (here the mouse) draws, the highlighter and Undo work
-  await page.click('#markBtn');
+  // a finger (here the mouse) draws too, and the highlighter and Undo work
   await page.click('[data-tool="highlight"]');
   await page.mouse.move(unit.x + unit.w * 0.3, unit.y + unit.h * 0.5); await page.mouse.down();
   await page.mouse.move(unit.x + unit.w * 0.6, unit.y + unit.h * 0.5, { steps: 6 }); await page.mouse.up();

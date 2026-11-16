@@ -63,7 +63,7 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   await page.waitForSelector('#sheet canvas');
   check('page 1 drawn with ink', (await ink()) > 0.005);
   check('file name shows sample', (await page.textContent('#fileName')) === 'Sample: Warm-ups');
-  check('Follow waits until the piece is taught', await page.isDisabled('#followBtn'));
+  check('Follow waits until the piece is taught', (await page.getAttribute('#followBtn', 'data-ready')) === 'false');
   check('Teach is ready', !(await page.isDisabled('#teachBtn')));
   check('says the piece is not taught yet', /hasn't been taught/.test(await page.textContent('#lessonInfo')));
 
@@ -124,13 +124,14 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   await page.waitForFunction(() => window.pageTurner.audioTime > 0, null, { timeout: 5000 }).catch(() => {});
   const tStart = await page.evaluate(() => window.pageTurner.audioTime);
   await page.waitForFunction((t) => window.pageTurner.audioTime > t + 3, tStart, { timeout: 8000 }).catch(() => {});
-  await page.click('#teachBtn');
+  await page.click('#teachDone');
+  if (await page.isHidden('#card')) await page.click('#helpBtn');
   check('teaching a section is stored', /Taught: 1 section/.test(await page.textContent('#lessonInfo')), await page.textContent('#lessonInfo'));
-  check('Follow is ready after teaching a section', !(await page.isDisabled('#followBtn')));
+  check('Follow is ready after teaching a section', (await page.getAttribute('#followBtn', 'data-ready')) === 'true');
   await page.click('#forgetBtn');
   check('Forget asks for a second tap', (await page.textContent('#forgetBtn')) === 'Tap again to forget');
   await page.click('#forgetBtn');
-  check('Forget clears what was learned', /hasn't been taught/.test(await page.textContent('#lessonInfo')) && (await page.isDisabled('#followBtn')));
+  check('Forget clears what was learned', /hasn't been taught/.test(await page.textContent('#lessonInfo')) && (await page.getAttribute('#followBtn', 'data-ready')) === 'false');
 
   // Scanned (image-only) PDF and a broken file
   await page.setInputFiles('#fileInput', path.join(__dirname, 'fixtures/scan-test.pdf'));
@@ -144,7 +145,7 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   check('bad file shows a clear error', /Couldn't open not-a-pdf\.pdf/.test(await page.textContent('#statusText')));
   check('previous PDF still open', (await num()) === '1 / 3');
   await page.reload();
-  check('reopens the last PDF after a reload', (await waitNum('1 / 3')) && (await page.textContent('#fileName')) === 'scan-test.pdf', await page.textContent('#fileName'));
+  check('reopens the last PDF after a reload', (await waitNum('1 / 3')) && (await page.textContent('#fileName')) === 'scan-test', await page.textContent('#fileName'));
   await page.waitForSelector('#sheet canvas', { timeout: 8000 }).catch(() => {});
 
   // Rotation and phone width

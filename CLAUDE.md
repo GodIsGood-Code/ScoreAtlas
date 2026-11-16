@@ -1,12 +1,24 @@
-# Page Turner
+# ScoreAtlas
 
-A web app, iPad first, that shows sheet music and turns pages automatically by listening to the piano.
+The app is called **ScoreAtlas** (named by the owner; the GitHub project was renamed from page-turner, the local
+folder may still be `page-turner`). A web app, iPad first, that shows sheet music and turns pages automatically by listening to the piano.
 The owner is a pianist with little coding experience. Claude writes the code and explains things in plain
 language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 11 (current):** Phase C everyday essentials (roadmap steps 10–13), built at the owner's request without
+- **Test 12 (current):** a design pass at the owner's request ("make it look and feel as good as possible", full
+  liberty) plus the name ScoreAtlas. Warm paper-and-ink palette with one brass accent (tokens on `:root`, dark mode
+  redefined), Fraunces for titles, inline SVG icons (a `<symbol>` sprite in index.html). Top bar: the piece's name is
+  the Library button; a page pill in the middle; Mark, View, Loop with labels (icons only under 760 px), Follow as the
+  main pill button (brass and a pulsing microphone while listening), Piece. Without sheet music or teaching, Follow
+  opens the Piece panel and explains (`data-ready="false"`) instead of being disabled. The Piece panel (`#card`)
+  holds page turning (lesson info, Add sheet music, Teach, Forget, Sheet music options as a fold-out), practice
+  (report, listen back), the microphone check and "What's new". Teach closes the panel; a Done button sits in the
+  "Teaching…" bar (`#teachDone`). One panel at a time (`closePanels`), the library dims the music (`#scrim`), Esc
+  closes things. The Pencil marks only while Mark is on (owner's request: no accidental marks); the page gets a brass
+  outline in marking mode. Live address after the rename: https://godisgood-code.github.io/ScoreAtlas/.
+- **Test 11:** Phase C everyday essentials (roadmap steps 10–13), built at the owner's request without
   waiting for Test 10 feedback (they'll send it with a recording). **Library** (`library.js`, storage in `store.js`:
   `piece|<key>` bytes, `meta|<key>` { name, pages, added, opened, thumb }, `setlists`): every PDF opened is kept (also
   the one left open from before); open, rename, remove (also its lesson, markings, practice history); "Add a PDF";
@@ -98,7 +110,7 @@ language; the owner tests on their iPad and reports back.
   still while the pianist plays something that isn't in the piece. A page flip by the pianist is a hint.
 - **Test 3:** Teach and Follow. The owner tested it on their piano: every page turned by itself at the taught
   moments, no wrong turns, never stuck. The pedal keys work (the "Pedal keys received" line showed them correctly).
-- Live at https://godisgood-code.github.io/page-turner/ through GitHub Pages, deployed from `main`, root folder.
+- Live at https://godisgood-code.github.io/ScoreAtlas/ through GitHub Pages (repository GodIsGood-code/ScoreAtlas), deployed from `main`, root folder.
 - The owner approved publishing tested updates straight to `main` (no need to ask each time).
 - Test 2 feedback from the owner: single notes without pedal were read well; pedaled chords with uneven voicing
   were not; the display felt slightly delayed. Test 1 was a claude.ai artifact (artifacts can't use the mic).

@@ -59,10 +59,10 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
     await page.keyboard.press('ArrowRight');
   }
   await waitAudio(page, teachT.end + 0.8);
-  await page.click('#teachBtn'); // Done
+  await page.click('#teachDone');
   const info = await page.textContent('#lessonInfo');
   check('teaching learned 3 page turns', /3 page turns/.test(info), info);
-  check('Follow is ready after teaching', !(await page.isDisabled('#followBtn')));
+  check('Follow is ready after teaching', (await page.getAttribute('#followBtn', 'data-ready')) === 'true');
   await ctx.close();
 
   // Follow, in a fresh browser session: the lesson must have been saved on the device

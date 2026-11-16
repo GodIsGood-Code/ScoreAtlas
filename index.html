@@ -5,158 +5,194 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Page Turner">
-  <title>Page Turner</title>
+  <meta name="apple-mobile-web-app-title" content="ScoreAtlas">
+  <title>ScoreAtlas</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@500&display=swap">
   <link rel="stylesheet" href="styles.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <meta name="theme-color" content="#f6f7f9">
+  <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1c20" media="(prefers-color-scheme: dark)">
   <script type="module" src="app.js"></script>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3"/><path d="M9 7h6"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></symbol>
+    <symbol id="i-view" viewBox="0 0 24 24"><rect x="3" y="4.5" width="7.5" height="15" rx="1.5"/><rect x="13.5" y="4.5" width="7.5" height="15" rx="1.5"/></symbol>
+    <symbol id="i-loop" viewBox="0 0 24 24"><path d="M17 2.5l3 3-3 3"/><path d="M4 11.5v-1A5 5 0 0 1 9 5.5h11"/><path d="M7 21.5l-3-3 3-3"/><path d="M20 12.5v1a5 5 0 0 1-5 5H4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></symbol>
+    <symbol id="i-piece" viewBox="0 0 24 24"><path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  </svg>
   <div class="app">
     <header class="rail">
       <div class="ident">
-        <span class="mark">Page Turner</span>
-        <span class="tag">Test 11</span>
-        <span class="file" id="fileName">Loading…</span>
-        <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist">✕</button></span>
+        <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 12</span></span><span class="file" id="fileName">Loading…</span></span>
+        </button>
+        <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
+      </div>
+      <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+      <div class="counter" role="group" aria-label="Pages">
+        <button id="prevBtn" class="btn icon flat" type="button" aria-label="Previous page"><svg class="i"><use href="#i-left"/></svg></button>
+        <output id="pageNum" aria-live="polite">– / –</output>
+        <button id="nextBtn" class="btn icon flat" type="button" aria-label="Next page"><svg class="i"><use href="#i-right"/></svg></button>
       </div>
       <div class="controls">
-        <button id="libraryBtn" class="btn" type="button">Library</button>
-        <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
-        <div class="counter">
-          <button id="prevBtn" class="btn icon" type="button" aria-label="Previous page">‹</button>
-          <output id="pageNum" aria-live="polite">– / –</output>
-          <button id="nextBtn" class="btn icon" type="button" aria-label="Next page">›</button>
-        </div>
-        <button id="markBtn" class="btn icon" type="button" aria-pressed="false" aria-label="Mark the music (Apple Pencil)" title="Mark">✎</button>
+        <button id="markBtn" class="btn tool" type="button" aria-pressed="false" aria-label="Mark the music"><svg class="i"><use href="#i-pen"/></svg><span class="lbl">Mark</span></button>
         <span class="view-wrap">
-          <button id="viewBtn" class="btn" type="button" aria-expanded="false" aria-controls="viewMenu">View</button>
+          <button id="viewBtn" class="btn tool" type="button" aria-expanded="false" aria-controls="viewMenu"><svg class="i"><use href="#i-view"/></svg><span class="lbl">View</span></button>
           <div class="view-menu" id="viewMenu" hidden>
-            <label><input id="twoUpToggle" type="checkbox"> Two pages side by side when the iPad is sideways</label>
-            <label><input id="halfToggle" type="checkbox"> Half-page turns (the next page's top half shows while you play the bottom of this one)</label>
-            <button id="lockBtn" class="btn small" type="button">Lock for performing</button>
-            <p class="note">Locked, only the pedal turns pages: taps and the Pencil do nothing.</p>
+            <p class="menu-title">Display</p>
+            <label class="switch"><input id="twoUpToggle" type="checkbox"><span><b>Two pages side by side</b><small>When the iPad is sideways</small></span></label>
+            <label class="switch"><input id="halfToggle" type="checkbox"><span><b>Half-page turns</b><small>The next page's top half shows while you play the bottom of this one</small></span></label>
+            <button id="lockBtn" class="btn wide" type="button"><svg class="i"><use href="#i-lock"/></svg><span>Lock for performing</span></button>
+            <p class="note">Locked, only the pedal turns pages; taps and the Pencil do nothing.</p>
           </div>
         </span>
-        <button id="loopBtn" class="btn mode" type="button" aria-pressed="false" hidden>Loop</button>
-        <button id="teachBtn" class="btn mode" type="button" aria-pressed="false">Teach</button>
-        <button id="followBtn" class="btn mode primary" type="button" aria-pressed="false">Follow</button>
-        <button id="helpBtn" class="btn icon" type="button" aria-label="Show test steps" aria-expanded="true" aria-controls="card">?</button>
+        <button id="loopBtn" class="btn tool" type="button" aria-pressed="false" hidden><svg class="i"><use href="#i-loop"/></svg><span class="lbl">Loop</span></button>
+        <button id="followBtn" class="btn follow" type="button" aria-pressed="false"><svg class="i"><use href="#i-mic"/></svg><span class="lbl">Follow</span></button>
+        <button id="helpBtn" class="btn tool" type="button" aria-label="This piece: sheet music, teaching, practice, microphone" aria-expanded="true" aria-controls="card"><svg class="i"><use href="#i-piece"/></svg><span class="lbl">Piece</span></button>
       </div>
     </header>
 
     <main class="stand" id="stand" tabindex="-1" aria-label="Sheet music. Tap the right side for the next page and the left side for the previous page.">
       <div class="progress" id="progress" hidden><i id="progressFill"></i></div>
-      <div class="modebar" id="modebar" hidden aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="modeText"></span></div>
-      <div class="replaybar" id="replayBar" hidden role="group" aria-label="Replay">
+      <div class="modebar" id="modebar" hidden aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="modeText"></span><button id="teachDone" class="btn small primary" type="button" hidden>Done</button></div>
+      <div class="replaybar floatbar" id="replayBar" hidden role="group" aria-label="Replay">
         <button id="rpBack" class="btn small" type="button" aria-label="Back 5 seconds">−5 s</button>
         <button id="rpPlay" class="btn small" type="button" aria-pressed="true">Pause</button>
         <button id="rpFwd" class="btn small" type="button" aria-label="Forward 5 seconds">+5 s</button>
         <input id="rpSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Position in the recording">
         <span id="rpTime" class="rp-time">0:00 / 0:00</span>
-        <button id="rpClose" class="btn small" type="button">Done</button>
+        <button id="rpClose" class="btn small primary" type="button">Done</button>
       </div>
-      <div class="markbar" id="markBar" hidden role="toolbar" aria-label="Markings">
-        <button class="btn small ink" type="button" data-tool="pen" data-color="black" aria-label="Black pen"><i style="background:#1a1d21"></i></button>
-        <button class="btn small ink" type="button" data-tool="pen" data-color="red" aria-label="Red pen"><i style="background:#c62828"></i></button>
-        <button class="btn small ink" type="button" data-tool="pen" data-color="blue" aria-label="Blue pen"><i style="background:#1f5fc4"></i></button>
-        <button class="btn small" type="button" data-tool="highlight">Highlight</button>
-        <button class="btn small" type="button" data-tool="finger">1–5</button>
-        <button class="btn small" type="button" data-tool="erase">Eraser</button>
+      <div class="markbar floatbar" id="markBar" hidden role="toolbar" aria-label="Markings">
+        <span class="tool-group">
+          <button class="btn small ink" type="button" data-tool="pen" data-color="black" aria-label="Black pen"><i style="background:#1a1d21"></i></button>
+          <button class="btn small ink" type="button" data-tool="pen" data-color="red" aria-label="Red pen"><i style="background:#c62828"></i></button>
+          <button class="btn small ink" type="button" data-tool="pen" data-color="blue" aria-label="Blue pen"><i style="background:#1f5fc4"></i></button>
+          <button class="btn small" type="button" data-tool="highlight">Highlight</button>
+          <button class="btn small" type="button" data-tool="finger">1–5</button>
+          <button class="btn small" type="button" data-tool="erase">Eraser</button>
+        </span>
         <span class="digit-row" id="digitRow" hidden><button class="btn small" type="button" aria-pressed="true">1</button><button class="btn small" type="button">2</button><button class="btn small" type="button">3</button><button class="btn small" type="button">4</button><button class="btn small" type="button">5</button></span>
-        <button id="markUndo" class="btn small" type="button">Undo</button>
-        <button id="markClear" class="btn small" type="button">Clear page</button>
-        <button id="markDone" class="btn small" type="button">Done</button>
+        <span class="tool-group">
+          <button id="markUndo" class="btn small" type="button" aria-label="Undo"><svg class="i"><use href="#i-undo"/></svg></button>
+          <button id="markClear" class="btn small" type="button">Clear page</button>
+          <button id="markDone" class="btn small primary" type="button">Done</button>
+        </span>
       </div>
-      <button id="unlockBtn" class="unlock" type="button" hidden aria-label="Hold to unlock">🔒 Hold to unlock</button>
+      <button id="unlockBtn" class="unlock" type="button" hidden aria-label="Hold to unlock"><svg class="i"><use href="#i-lock"/></svg><span>Hold to unlock</span></button>
       <div class="sheet" id="sheet"></div>
       <div class="status" id="status" hidden><span id="statusText"></span></div>
       <div class="toast" id="toast" hidden></div>
     </main>
 
-    <aside class="card library" id="library" aria-label="Library" hidden>
-      <div class="lib-head">
+    <div class="scrim" id="scrim" hidden></div>
+    <aside class="panel library" id="library" aria-label="Library" hidden>
+      <div class="panel-head lib-head">
         <h2>Library</h2>
         <span class="lib-buttons">
-          <button class="btn small lib-add" type="button">Add a PDF</button>
-          <button class="btn small lib-close" type="button">Close</button>
+          <button class="btn small primary lib-add" type="button"><svg class="i"><use href="#i-plus"/></svg><span>Add a PDF</span></button>
+          <button class="btn icon flat lib-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
         </span>
       </div>
-      <div class="lib-tabs" role="group" aria-label="Show">
-        <button class="btn small lib-tab" type="button" data-tab="pieces" aria-pressed="true">Pieces</button>
-        <button class="btn small lib-tab" type="button" data-tab="setlists" aria-pressed="false">Setlists</button>
+      <div class="lib-tabs segmented" role="group" aria-label="Show">
+        <button class="lib-tab" type="button" data-tab="pieces" aria-pressed="true">Pieces</button>
+        <button class="lib-tab" type="button" data-tab="setlists" aria-pressed="false">Setlists</button>
       </div>
-      <input class="lib-search" type="text" placeholder="Find a piece" aria-label="Find a piece" autocomplete="off">
+      <input class="lib-search" type="search" placeholder="Find a piece" aria-label="Find a piece" autocomplete="off">
       <div class="lib-body"></div>
     </aside>
 
-    <aside class="card report" id="report" aria-label="Practice report" hidden>
-      <div class="report-head">
+    <aside class="panel side report" id="report" aria-label="Practice report" hidden>
+      <div class="panel-head report-head">
         <h2>Practice report</h2>
         <span class="report-buttons">
-          <button id="replayBtn" class="btn small" type="button" hidden>▶ Listen back</button>
-          <button id="reportClose" class="btn small" type="button">Close</button>
+          <button id="replayBtn" class="btn small" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span>Listen back</span></button>
+          <button id="reportClose" class="btn icon flat" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
         </span>
       </div>
       <div id="reportBody"></div>
       <label class="heat-toggle"><input id="heatToggle" type="checkbox" checked> Tint the bars on the page by how often you played them</label>
     </aside>
 
-    <aside class="card" id="card" aria-label="Test steps">
-      <h2>Test 11: library, setlists, Pencil, display, offline</h2>
-      <ol>
-        <li><b>Library:</b> every PDF you open is kept there. Tap <b>Library</b> to open a piece, rename it or remove it. <b>Add a PDF</b> is there too.</li>
-        <li><b>Setlists:</b> in the Library, tap <b>Setlists</b>, <b>New setlist</b>, name it, add pieces and put them in order, then <b>Play</b>. On a piece's last page, the forward pedal opens the next piece (and Follow carries on if it was on).</li>
-        <li><b>Apple Pencil:</b> just write on the music. Tap <b>✎</b> for colours, the highlighter, fingering numbers (1–5), the eraser and Undo; while ✎ is on, a finger draws too. Markings are saved with the piece.</li>
-        <li><b>View:</b> two pages side by side when the iPad is sideways, half-page turns, and <b>Lock for performing</b> (only the pedal turns pages; hold the lock button to unlock).</li>
-        <li><b>Offline:</b> once loaded, the app works without Wi-Fi. For an app icon: Share, then <b>Add to Home Screen</b>.</li>
-      </ol>
-      <div class="lesson-row">
-        <p class="lesson" id="lessonInfo"></p>
-        <button id="forgetBtn" class="btn small" type="button" hidden>Forget</button>
+    <aside class="panel side" id="card" aria-label="This piece">
+      <div class="panel-head card-head">
+        <div><p class="eyebrow">This piece</p><h2 id="pieceTitle">ScoreAtlas</h2></div>
+        <button id="cardClose" class="btn icon flat" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
       </div>
-      <div class="actions">
-        <button id="scoreBtn" class="btn small" type="button">Add sheet music</button>
-        <button id="reportBtn" class="btn small" type="button" hidden>Practice report</button>
-        <button id="replayCardBtn" class="btn small" type="button" hidden>▶ Listen back</button>
-        <input id="scoreInput" type="file" accept=".mxl,.musicxml,.xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
-      </div>
-      <section class="score-opts" id="scoreOpts" hidden aria-label="Sheet music options">
-        <h3>Sheet music options</h3>
-        <fieldset id="partsBox" hidden>
-          <legend>Parts I play</legend>
-          <div class="parts" id="partsList"></div>
-          <p class="note">The piano part is ticked for you. Tick any other part you play too (Audiveris sometimes splits a piano into two parts).</p>
-        </fieldset>
-        <label class="field" for="startPageInput">The music starts on page</label>
-        <input id="startPageInput" type="text" inputmode="numeric" autocomplete="off" value="1">
-        <p class="note">For a piece with several movements in one PDF: add the sheet music of one movement and type the page it starts on.</p>
-        <label class="field" for="barsInput">First bar on each following page</label>
-        <input id="barsInput" type="text" inputmode="numeric" autocomplete="off" placeholder="for example 12, 27, 41">
-        <p class="note">Only needed when the sheet music came from somewhere else or its pages don't match your PDF. Leave empty to use the sheet music's own pages.</p>
-        <div class="actions"><button id="applyBtn" class="btn small" type="button">Apply</button></div>
-      </section>
-      <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
-      <p class="offline-note" id="offlineNote" hidden>✓ Saved on this iPad: works without Wi-Fi. For an app icon, tap Share, then Add to Home Screen.</p>
 
-      <section class="ear" aria-label="Notes the app hears">
+      <section class="group">
+        <h3>Page turning</h3>
+        <div class="lesson-row">
+          <p class="lesson" id="lessonInfo"></p>
+        </div>
+        <div class="actions">
+          <button id="scoreBtn" class="btn small" type="button">Add sheet music</button>
+          <button id="teachBtn" class="btn small" type="button" aria-pressed="false">Teach</button>
+          <button id="forgetBtn" class="btn small quiet" type="button" hidden>Forget</button>
+          <input id="scoreInput" type="file" accept=".mxl,.musicxml,.xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
+        </div>
+        <p class="note">Sheet music (MusicXML, from Audiveris or MuseScore) lets the app follow without teaching. Teach: play the piece, or any part of it, turning pages yourself.</p>
+        <details class="score-opts" id="scoreOpts" hidden>
+          <summary>Sheet music options</summary>
+          <fieldset id="partsBox" hidden>
+            <legend>Parts I play</legend>
+            <div class="parts" id="partsList"></div>
+            <p class="note">The piano part is ticked for you. Tick any other part you play too (Audiveris sometimes splits a piano into two parts).</p>
+          </fieldset>
+          <label class="field" for="startPageInput">The music starts on page</label>
+          <input id="startPageInput" type="text" inputmode="numeric" autocomplete="off" value="1">
+          <p class="note">For a piece with several movements in one PDF: add one movement's sheet music and type the page it starts on.</p>
+          <label class="field" for="barsInput">First bar on each following page</label>
+          <input id="barsInput" type="text" inputmode="numeric" autocomplete="off" placeholder="for example 12, 27, 41">
+          <p class="note">Only needed when the sheet music came from somewhere else or its pages don't match your PDF.</p>
+          <div class="actions"><button id="applyBtn" class="btn small primary" type="button">Apply</button></div>
+        </details>
+      </section>
+
+      <section class="group" id="practiceGroup">
+        <h3>Practice</h3>
+        <div class="actions">
+          <button id="reportBtn" class="btn small" type="button" hidden>Practice report</button>
+          <button id="replayCardBtn" class="btn small" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span>Listen back</span></button>
+        </div>
+        <p class="note" id="practiceNote">After practising with Follow, tap Stop for a report of your session, and listen back to it.</p>
+      </section>
+
+      <section class="group ear" aria-label="Notes the app hears">
         <div class="ear-head">
-          <p class="heard"><span class="label">Hearing:</span> <b id="earHeard"></b></p>
+          <h3>Microphone</h3>
           <button id="micBtn" class="btn small" type="button" aria-pressed="false">Check microphone</button>
         </div>
+        <p class="heard"><span class="label">Hearing:</span> <b id="earHeard"></b></p>
         <div class="keys" id="earKeys"></div>
         <div class="level" aria-hidden="true"><i id="earLevel"></i></div>
         <p class="note" id="earNote" hidden></p>
+        <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
       </section>
 
-      <div class="actions">
-        <button id="cardClose" class="btn" type="button">Hide steps</button>
-      </div>
+      <details class="group whatsnew">
+        <summary>What's new in Test 12</summary>
+        <ol>
+          <li><b>A new look.</b> Your piece's name (top left) opens the <b>Library</b>. <b>Piece</b> (top right) holds everything about the open piece: sheet music, Teach, practice report, microphone.</li>
+          <li><b>Marking needs Mark on:</b> tap <b>Mark</b> before writing, so the Pencil never marks the music by accident. <b>Done</b> turns it off.</li>
+          <li><b>Teach</b> is under <b>Piece</b>; while teaching, tap <b>Done</b> in the bar at the top.</li>
+          <li><b>Esc</b> or the ✕ closes any panel; only one panel opens at a time.</li>
+        </ol>
+      </details>
+      <p class="offline-note" id="offlineNote" hidden>✓ Saved on this iPad: works without Wi-Fi. For an app icon: Share, then Add to Home Screen.</p>
     </aside>
   </div>
 </body>

@@ -1,4 +1,4 @@
-// Markings on the music with Apple Pencil (or a finger, while "Mark" is on): pen in three colours, highlighter,
+// Markings on the music with Apple Pencil or a finger, while "Mark" is on (so nothing is marked by accident): pen in three colours, highlighter,
 // fingering numbers, an eraser that removes whole strokes, and undo. Strokes are kept as points relative to the page
 // (0..1 across and down), so they stay in place at any size, in two-page view and in half-page view.
 // While the Pencil is writing, touches from the hand resting on the screen are ignored (they don't turn the page).
@@ -111,8 +111,7 @@ export class Marks {
       const pen = e.pointerType === "pen";
       // the hand resting on the screen while writing: ignore it
       if (!pen && (this.active || performance.now() - this.lastPen < 600)) { swallow(e); return; }
-      if (!this.enabled()) return;
-      if (!pen && !this.markMode) return;
+      if (!this.enabled() || !this.markMode) return;
       const unit = e.target.closest && e.target.closest(".page");
       if (!unit) return;
       const page = Number(unit.dataset.page);
