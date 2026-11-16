@@ -242,12 +242,12 @@ def noodle(inst, rng, t, seconds, kind):
 
 
 def practice(name, out_dir, segments, initial_page=1, short=False, base=78, depth=0.05, phase=0.6, mel=90, acc=56, vel_jitter=6,
-             timing=0.012, noise_db=-46, tilt=0.2, gain_db=0.0, seed=21):
+             timing=0.012, noise_db=-46, tilt=0.2, gain_db=0.0, seed=21, drop=0.0, wrong=0.0, ritard=0.18):
     """A practice session: segments of ("play", from_beat, to_beat), ("pause", seconds) or ("noodle", seconds)
     (notes that aren't in the piece). The JSON's "track" gives, every 0.05 s, the beat being played (-1: none)."""
     rng = random.Random(seed)
     events, pedals, total = build_score(short)
-    beats, times = tempo_map(total, base, depth, phase)
+    beats, times = tempo_map(total, base, depth, phase, ritard=ritard)
     at = lambda b: float(np.interp(b, beats, times)) - LEAD_IN
     page_beats = 16 if short else 32
     inst = pretty_midi.Instrument(program=0)
@@ -267,6 +267,10 @@ def practice(name, out_dir, segments, initial_page=1, short=False, base=78, dept
             for (sb, db, pitch, role) in events:
                 if not (b0 <= sb < b1):
                     continue
+                if rng.random() < drop:
+                    continue
+                if rng.random() < wrong:
+                    pitch += rng.choice([-2, -1, 1, 2])
                 start = at(sb) + off + rng.gauss(0, timing)
                 end = min(at(sb + db) + off + 0.02, seg_end + 0.05)
                 vel = (mel if role == "mel" else acc) + (6 if sb % 4 == 0 else 0) + rng.gauss(0, vel_jitter)
@@ -329,6 +333,15 @@ PRACTICE = {
     "p_noodle_chords": dict(initial_page=3, segments=[("play", 64, 84), ("pause", 0.6), ("noodle", 8.0, "chords"), ("pause", 0.8), ("play", 84, 104)], seed=47),
     "p_noodle_improv": dict(initial_page=1, segments=[("play", 4, 24), ("pause", 0.6), ("noodle", 8.0, "improv"), ("pause", 0.8), ("play", 24, 40)], seed=48),
     "p_warmup_first": dict(initial_page=3, segments=[("noodle", 6.0, "scale"), ("pause", 1.0), ("noodle", 6.0, "chords"), ("pause", 1.2), ("play", 66, 90)], seed=49),
+    # Turn-critical sessions: things happening right around a page turn (turns at beats 31, 63, 95)
+    "t_resume_before_turn": dict(initial_page=1, segments=[("play", 16, 29.5), ("pause", 1.5), ("play", 29.5, 40)], seed=61),
+    "t_restart_before_turn": dict(initial_page=2, segments=[("play", 40, 50), ("pause", 1.2), ("play", 60, 72)], seed=62),
+    "t_soft": dict(initial_page=1, segments=[("play", 0, 72)], mel=48, acc=32, noise_db=-48, seed=63),
+    "t_mistakes_turns": dict(initial_page=1, segments=[("play", 20, 104)], drop=0.08, wrong=0.06, timing=0.03, seed=64),
+    "t_big_ritard": dict(initial_page=2, segments=[("play", 40, 104)], ritard=0.45, seed=65),
+    "t_very_fast": dict(initial_page=1, segments=[("play", 0, 104)], base=112, seed=66),
+    "t_noisy_turns": dict(initial_page=3, segments=[("play", 70, 112)], noise_db=-30, tilt=0.6, seed=67),
+    "t_stop_after_turn": dict(initial_page=1, segments=[("play", 20, 33), ("pause", 2.0), ("play", 33, 44)], seed=68),
     "p_noodle_fast": dict(initial_page=1, segments=[("play", 0, 20), ("pause", 0.6), ("noodle", 5.0), ("pause", 0.8), ("play", 20, 40)], base=92, seed=44),
     "p_back_over_turn": dict(initial_page=2, segments=[("play", 52, 72), ("pause", 1.5), ("play", 56, 72), ("pause", 1.5), ("play", 56, 76)], seed=38),
 }

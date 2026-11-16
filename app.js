@@ -1,11 +1,15 @@
 // Page Turner: shows a PDF one page at a time and turns pages from a Bluetooth pedal, taps or swipes.
-// Teach: play the piece, or any section of it, turning pages yourself; sections add up. Follow: play it
-// again, from anywhere, and the app turns the pages by listening, keeping up with practice.
+// Teach: play the piece, or any section of it, turning pages yourself; sections add up. Sheet music: add the
+// piece's MusicXML (from Audiveris) and the app learns it without teaching. Follow: play from anywhere and the app
+// turns the pages by listening, keeping up with practice, and highlights the measure being played.
 import { Microphone } from "./listen.js";
 import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
+import { readScore } from "./engine/score.js";
+import { scoreSection } from "./engine/scorelesson.js";
+import { findMeasures, systemCounts } from "./engine/layout.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
@@ -15,6 +19,11 @@ const stand = $("stand"), sheet = $("sheet"), pageNum = $("pageNum");
 const fileName = $("fileName"), fileInput = $("fileInput");
 const card = $("card"), helpBtn = $("helpBtn"), keysSeen = $("keysSeen");
 const teachBtn = $("teachBtn"), followBtn = $("followBtn"), micBtn = $("micBtn"), forgetBtn = $("forgetBtn");
+const scoreBtn = $("scoreBtn"), scoreInput = $("scoreInput");
+// the measure highlight, drawn over the page
+const marker = document.createElement("div");
+marker.className = "measure-mark";
+marker.hidden = true;
 const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
 const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
@@ -134,7 +143,7 @@ async function show(n) {
     return;
   }
   if (token !== showToken) return;
-  sheet.replaceChildren(canvas);
+  sheet.replaceChildren(canvas, marker);
   setStatus(null);
   // Keep the pages on either side ready so a turn is instant
   const near = [state.page + 1, state.page - 1].filter((p) => p >= 1 && p <= state.count);
@@ -276,6 +285,7 @@ function stopMode() {
   if (mode === "teach") teach = null;
   mode = "idle";
   follower = null;
+  marker.hidden = true;
   releaseMic();
   updateButtons();
   updateModebar();
@@ -301,6 +311,7 @@ function onFrame(frame) {
   } else if (mode === "follow" && follower) {
     const st = follower.push(frame);
     if (frame.index % 5 === 0) updateModebar(st);
+    if (frame.index % 2 === 0) drawMarker();
   }
 }
 
@@ -337,7 +348,8 @@ function updateButtons() {
   followBtn.textContent = mode === "follow" ? "Stop" : "Follow";
   followBtn.setAttribute("aria-pressed", String(mode === "follow"));
   followBtn.disabled = !state.lesson || mode === "teach";
-  followBtn.title = state.lesson ? "" : "Teach this piece first";
+  followBtn.title = state.lesson ? "" : "Add this piece's sheet music or teach it first";
+  scoreBtn.disabled = !state.pdf || mode !== "idle";
   micBtn.textContent = micCheck ? "Stop" : "Check microphone";
   micBtn.setAttribute("aria-pressed", String(micCheck));
 }
@@ -346,14 +358,107 @@ function updateLessonInfo() {
   const el = $("lessonInfo"), sections = sectionsOf(state.lesson);
   forgetBtn.hidden = !sections.length || mode !== "idle";
   resetForget();
+  const fromScore = sections.find((s) => s.fromScore);
+  const taught = sections.filter((s) => !s.fromScore);
+  const parts = [];
+  if (fromScore) {
+    const placed = fromScore.layout ? fromScore.layout.filter(Boolean).length : 0;
+    parts.push(`Sheet music: ${plural(fromScore.measures || 0, "measure")} on ${plural(fromScore.pages || 0, "page")}` +
+      (placed < (fromScore.measures || 0) ? ` (${placed} found on the pages for highlighting)` : "") + ".");
+  }
+  if (taught.length) {
+    const secs = taught.reduce((n, s) => n + s.length, 0) / FRAME_RATE;
+    const turns = taught.reduce((n, s) => n + s.turns.length, 0);
+    parts.push(`Taught: ${plural(taught.length, "section")}, ${clock(secs)} of music, ${plural(turns, "page turn")}.`);
+  }
   if (!state.pdf) el.textContent = "";
-  else if (!sections.length) el.textContent = "This piece hasn't been taught yet.";
-  else {
-    const secs = sections.reduce((n, s) => n + s.length, 0) / FRAME_RATE;
-    const turns = sections.reduce((n, s) => n + s.turns.length, 0);
-    el.textContent = `Taught: ${plural(sections.length, "section")}, ${clock(secs)} of music, ${plural(turns, "page turn")}.`;
+  else el.textContent = parts.length ? parts.join(" ") : "This piece has no sheet music and hasn't been taught yet.";
+}
+
+// The measure being played, highlighted on the page (when the piece has sheet music)
+function drawMarker() {
+  const f = follower && follower.lesson;
+  const canvas = sheet.querySelector("canvas");
+  const m = f && follower.status === "following" && !follower.unsure ? f.measure[follower.position] : -1;
+  const box = m >= 0 && f.layout ? f.layout[m] : null;
+  if (!box || box.page !== state.page || !canvas) { marker.hidden = true; return; }
+  marker.style.left = `${canvas.offsetLeft + box.x0 * canvas.offsetWidth}px`;
+  marker.style.top = `${canvas.offsetTop + box.y0 * canvas.offsetHeight}px`;
+  marker.style.width = `${(box.x1 - box.x0) * canvas.offsetWidth}px`;
+  marker.style.height = `${(box.y1 - box.y0) * canvas.offsetHeight}px`;
+  marker.hidden = false;
+}
+
+const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps
+
+// A page of the PDF as a grey image, about 130 dots per inch, for finding the measures
+async function pageImage(n) {
+  const page = await state.pdf.getPage(n);
+  const base = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: 1100 / base.width });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(vp.width);
+  canvas.height = Math.round(vp.height);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const gray = new Uint8Array(canvas.width * canvas.height);
+  for (let i = 0; i < gray.length; i++) gray[i] = (rgba[4 * i] * 0.3 + rgba[4 * i + 1] * 0.59 + rgba[4 * i + 2] * 0.11) | 0;
+  const out = { gray, w: canvas.width, h: canvas.height };
+  canvas.width = canvas.height = 0;
+  return out;
+}
+
+// Add the piece's sheet music (MusicXML from Audiveris): read it, find its measures on the PDF's pages, and learn
+// how it sounds, so Follow works without teaching
+async function addScore(file) {
+  if (!state.pdf || mode !== "idle") return;
+  scoreBtn.disabled = true;
+  try {
+    setStatus("Reading the sheet music…");
+    await breathe();
+    const score = readScore(new Uint8Array(await file.arrayBuffer()));
+    const counts = systemCounts(score);
+    const layout = new Array(score.measures.length).fill(null);
+    for (const page of Object.keys(counts).map(Number)) {
+      if (page > state.count) continue;
+      setStatus(`Finding the measures on page ${page} of ${score.pages}…`);
+      await breathe();
+      const img = await pageImage(page);
+      const boxes = findMeasures(img.gray, img.w, img.h, counts[page]);
+      if (!boxes) continue;
+      const here = score.measures.map((m, i) => (m.page === page ? i : -1)).filter((i) => i >= 0);
+      here.forEach((mi, k) => { if (boxes[k]) layout[mi] = { page, x0: boxes[k].x0, y0: boxes[k].y0, x1: boxes[k].x1, y1: boxes[k].y1 }; });
+    }
+    setStatus("Learning how the music sounds…");
+    await breathe();
+    const section = scoreSection(score);
+    Object.assign(section, { layout, measures: score.measures.length, pages: score.pages, name: file.name });
+    // replace any earlier sheet music; taught sections stay (they're used where they fit better)
+    state.lesson = { version: 2, sections: [section, ...sectionsOf(state.lesson).filter((s) => !s.fromScore)] };
+    setStatus(null);
+    updateLessonInfo();
+    updateButtons();
+    const mismatch = score.pages !== state.count ? ` Note: the sheet music has ${plural(score.pages, "page")}, the PDF ${plural(state.count, "page")}.` : "";
+    toast(`Sheet music ready: ${plural(score.measures.length, "measure")}. Tap Follow and play.${mismatch}`, 4500);
+    keepData();
+    saveLesson(state.key, state.lesson).catch(() => toast("Couldn't save the sheet music on this iPad.", 3000));
+  } catch (err) {
+    setStatus(`Couldn't use ${file.name}: ${err.message || err}`, "error");
+  } finally {
+    scoreBtn.disabled = false;
+    updateButtons();
   }
 }
+scoreBtn.addEventListener("click", () => scoreInput.click());
+scoreInput.addEventListener("change", () => {
+  const file = scoreInput.files && scoreInput.files[0];
+  scoreInput.value = "";
+  backToMusic();
+  if (file) addScore(file);
+});
 
 // Forget everything this piece learned (asks for a second tap first)
 let forgetTimer = 0;

@@ -18,7 +18,7 @@
     <header class="rail">
       <div class="ident">
         <span class="mark">Page Turner</span>
-        <span class="tag">Test 6</span>
+        <span class="tag">Test 7</span>
         <span class="file" id="fileName">Loading…</span>
       </div>
       <div class="controls">
@@ -44,16 +44,20 @@
     </main>
 
     <aside class="card" id="card" aria-label="Test steps">
-      <h2>Test 6: teach in sections, steadier following</h2>
+      <h2>Test 7: sheet music, no teaching needed</h2>
       <ol>
-        <li><b>Teach a section:</b> flip to where it starts, tap <b>Teach</b>, wait a second, and play it, turning pages with your pedal as usual. Tap <b>Done</b> at the end.</li>
-        <li><b>Teach more sections</b> whenever you like. Starting each one a few bars before the last one ended helps the app move from one to the next. Re-teaching a section replaces the old one.</li>
-        <li><b>Tap Follow</b> and play anywhere you've taught. Pages turn in the taught music; in music you haven't taught yet, they won't.</li>
-        <li><b>Play something random</b>, in the piece's key too, then go back to the piece. Nothing should turn, and it should find you again quickly.</li>
+        <li><b>On your Mac:</b> open the piece's PDF in Audiveris, let it read the music, and export it as <b>MusicXML</b> (an .mxl file). Send that file to the iPad (AirDrop or iCloud Drive).</li>
+        <li><b>Here:</b> open the same PDF, then tap <b>Add sheet music</b> below and pick the .mxl file.</li>
+        <li><b>Tap Follow</b> and play from anywhere. Pages should turn without teaching, and the measure you're playing is highlighted.</li>
+        <li>If a passage doesn't follow well, <b>Teach</b> still works as a backup, and taught sections are used where they fit better.</li>
       </ol>
       <div class="lesson-row">
         <p class="lesson" id="lessonInfo"></p>
         <button id="forgetBtn" class="btn small" type="button" hidden>Forget</button>
+      </div>
+      <div class="actions">
+        <button id="scoreBtn" class="btn small" type="button">Add sheet music</button>
+        <input id="scoreInput" type="file" accept=".mxl,.musicxml,.xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
       </div>
       <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
 

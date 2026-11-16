@@ -1,0 +1,55 @@
+// Unit checks of reading MusicXML and the order measures are played in.  node tests/score-unit.js
+import { readScore, playOrder } from "../engine/score.js";
+
+// A one-staff score; each measure: { notes: "C4 D4" (quarters), marks: MusicXML to put first, end: MusicXML to put last }
+function xml(measures, { divisions = 1 } = {}) {
+  const body = measures.map((m, i) => `<measure number="${i + 1}">${i === 0 ? `<attributes><divisions>${divisions}</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>` : ""}${m.marks || ""}${
+    (m.notes || "C4 C4 C4 C4").split(" ").map((n) => `<note><pitch><step>${n[0]}</step><octave>${n.slice(-1)}</octave></pitch><duration>${divisions}</duration></note>`).join("")
+  }${m.end || ""}${m.raw || ""}</measure>`).join("");
+  return `<?xml version="1.0"?><!DOCTYPE score-partwise><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list><part id="P1">${body}</part></score-partwise>`;
+}
+const fwd = `<barline location="left"><repeat direction="forward"/></barline>`;
+const back = (times) => `<barline location="right"><repeat direction="backward"${times ? ` times="${times}"` : ""}/></barline>`;
+const ending = (num, type, loc = "left") => `<barline location="${loc}"><ending number="${num}" type="${type}"/></barline>`;
+const dir = (inner) => `<direction><direction-type>${inner}</direction-type></direction>`;
+const sound = (attrs) => `<sound ${attrs}/>`;
+
+let fails = 0;
+const check = (name, got, want) => {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (!ok) fails++;
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : `  (got ${JSON.stringify(got)}, want ${JSON.stringify(want)})`}`);
+};
+const order = (ms) => playOrder(readScore(xml(ms))).map((i) => i + 1);
+
+check("plain", order([{}, {}, {}]), [1, 2, 3]);
+check("repeat from the start", order([{}, { end: back() }, {}]), [1, 2, 1, 2, 3]);
+check("repeat a middle passage", order([{}, { marks: fwd }, { end: back() }, {}]), [1, 2, 3, 2, 3, 4]);
+check("repeat three times", order([{ marks: fwd }, { end: back(3) }, {}]), [1, 2, 1, 2, 1, 2, 3]);
+check("first and second endings", order([{ marks: fwd }, {}, { marks: ending("1", "start"), end: ending("1", "stop", "right") + back() }, { marks: ending("2", "start"), end: ending("2", "stop", "right") }, {}]), [1, 2, 3, 1, 2, 4, 5]);
+check("two repeats in a row", order([{ marks: fwd }, { end: back() }, { marks: fwd }, { end: back() }]), [1, 2, 1, 2, 3, 4, 3, 4]);
+check("D.C. al Fine (sound marks)", order([{}, { raw: sound('fine="yes"') }, {}, { raw: sound('dacapo="yes"') }]), [1, 2, 3, 4, 1, 2]);
+check("D.C. al Fine (words only)", order([{}, { marks: dir("<words>Fine</words>") }, {}, { marks: dir("<words>D.C. al Fine</words>") }]), [1, 2, 3, 4, 1, 2]);
+check("D.C. with repeats skipped after the jump", order([{ marks: fwd }, { end: back() }, { raw: sound('dacapo="yes"') }]), [1, 2, 1, 2, 3, 1, 2, 3]);
+check("D.S. al Coda", order([{}, { marks: dir("<segno/>") + sound('segno="s"') }, { raw: sound('tocoda="c"') }, { raw: sound('dalsegno="s"') }, { marks: dir("<coda/>") + sound('coda="c"') }, {}]), [1, 2, 3, 4, 2, 3, 5, 6]);
+check("al Fine with the Fine not read: stop at the repeat sign", order([{ marks: fwd }, { end: back() }, {}, { marks: dir("<words>Da Capo a ine</words>") }]), [1, 2, 1, 2, 3, 4, 1, 2]);
+
+// Reading notes: chords, two voices (backup), ties, rests
+{
+  const s = readScore(`<?xml version="1.0"?><score-partwise><part-list/><part id="P1"><measure number="1"><attributes><divisions>2</divisions></attributes>
+    <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration></note>
+    <note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration></note>
+    <note><rest/><duration>2</duration></note>
+    <note><pitch><step>G</step><alter>1</alter><octave>4</octave></pitch><duration>4</duration><tie type="start"/></note>
+    <backup><duration>8</duration></backup>
+    <note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration></note>
+  </measure><measure number="2">
+    <note><pitch><step>G</step><alter>1</alter><octave>4</octave></pitch><duration>2</duration><tie type="stop"/></note>
+    <note><pitch><step>A</step><octave>4</octave></pitch><duration>6</duration></note>
+  </measure></part></score-partwise>`);
+  const m1 = s.measures[0].notes.map((n) => `${n.midi}@${n.start}+${n.length}`);
+  check("chord, rest, second voice", m1, ["60@0+1", "64@0+1", "68@2+3", "48@0+4"]);
+  check("a tied note isn't struck again", s.measures[1].notes.map((n) => `${n.midi}@${n.start}`), ["69@1"]);
+  check("measure length", s.measures.map((m) => m.quarters), [4, 4]);
+}
+process.exit(fails ? 1 : 0);

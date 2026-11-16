@@ -110,7 +110,13 @@ body {
   -webkit-tap-highlight-color: transparent;
   outline: none;
 }
-.sheet { display: flex; align-items: center; justify-content: center; }
+.sheet { position: relative; display: flex; align-items: center; justify-content: center; }
+.measure-mark {
+  position: absolute; pointer-events: none;
+  background: rgba(216, 168, 60, .22); border: 2px solid rgba(160, 118, 30, .55); border-radius: 6px;
+  transition: left .12s ease-out, top .12s ease-out, width .12s ease-out;
+  mix-blend-mode: multiply;
+}
 .sheet canvas { display: block; background: #fff; box-shadow: var(--page-shadow); }
 
 .status {
@@ -176,5 +182,5 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .modebar[data-mode="teach"] .dot { animation: none; }
-  .key-col .bar i, .progress i { transition: none; }
+  .key-col .bar i, .progress i, .measure-mark { transition: none; }
 }

@@ -39,6 +39,12 @@ export const FOLLOW_SETTINGS = {
   strongRatio: 0.2, // ... and this much to be acted on at once (otherwise two lookups in a row must agree)
   turnRatio: 0.4, // before a page turn, the recent playing must match the music before it at least this well
   lostRatio: 0.5, // two checks in a row fitting worse than this (wrong notes fit better) mean the pianist is lost
+  trackRatio: 0.3, // the tracker's own match versus a random moment of the piece: real playing is usually under 0.3
+  holdRelease: 0.3, // seconds of good tracking after a pause that show the pianist went on from where they were
+  // Sections learned from sheet music match real playing less closely than a taught playthrough (no pedal,
+  // dynamics or timing in the written notes): real playing fits at about 0.35–0.6 of the background there,
+  // random playing at about 0.65–0.9. The same checks, with these limits:
+  score: { goodRatio: 0.6, strongRatio: 0.42, turnRatio: 0.65, lostRatio: 0.72, jumpMargin: 0.06, alikeMargin: 0.08, trackRatio: 0.45, tail: false },
   ambiguity: 1.12, // results within this ratio of the best count as equally good (e.g. a repeat) ...
   alikeMargin: 0.04, // ... or within this much of it: tiny differences between identical passages are noise
   jumpRatio: 0.7, // a jump needs a place this much better than where we think the pianist is ...
@@ -94,7 +100,7 @@ export function sectionsOf(lesson) {
 // Add a newly taught section. Older sections whose music the new one fully covers are dropped,
 // so re-teaching a passage replaces it.
 export function addSection(lesson, section, settings = FOLLOW_SETTINGS) {
-  const kept = sectionsOf(lesson).filter((old) => !covers(section, old, settings));
+  const kept = sectionsOf(lesson).filter((old) => old.fromScore || !covers(section, old, settings));
   return { version: 2, sections: [...kept, section] };
 }
 
@@ -130,6 +136,8 @@ export function flatten(lesson) {
     onset: new Float32Array(length * 12),
     sound: new Uint8Array(length),
     pageAt: new Int16Array(length), // the page showing at each moment while teaching
+    fromScore: new Uint8Array(length), // 1 where the section was learned from sheet music
+    measure: new Int16Array(length).fill(-1), // the score measure being played (sheet-music sections only)
     startOf: new Int32Array(length), // where each moment's section starts ...
     endOf: new Int32Array(length), // ... and ends (exclusive)
     starts: [],
@@ -143,6 +151,9 @@ export function flatten(lesson) {
     flat.onset.set(sec.onset, at * 12);
     flat.sound.set(sec.sound, at);
     flat.startOf.fill(at, at, at + sec.length);
+    if (sec.fromScore) flat.fromScore.fill(1, at, at + sec.length);
+    if (sec.measure) flat.measure.set(sec.measure, at);
+    if (sec.layout) flat.layout = sec.layout; // where each score measure is on the page
     flat.endOf.fill(at + sec.length, at, at + sec.length);
     flat.starts.push(at);
     flat.ends.push(at + sec.length);
@@ -191,8 +202,16 @@ export class Follower {
       maxGap: s(settings.maxGap), pause: s(settings.pause), query: s(settings.queryLength), minQuery: s(settings.minQuery),
       searchEvery: s(settings.searchEvery), checkEvery: s(settings.checkEvery), jump: s(settings.jumpDistance),
       lost: s(settings.lostAfter), ahead: s(settings.anticipation), back: s(settings.searchBack), flip: s(settings.flipHint),
+      holdRelease: s(settings.holdRelease),
     };
     this.flip = null;
+  }
+
+  // The match limits for lesson frame j (sheet-music sections have their own)
+  limits(j) {
+    const c = this.cfg;
+    if (j >= 0 && this.lesson.fromScore[j]) return { tail: true, ...c, ...c.score };
+    return { goodRatio: c.goodRatio, strongRatio: c.strongRatio, turnRatio: c.turnRatio, lostRatio: c.lostRatio, jumpMargin: c.jumpMargin, alikeMargin: c.alikeMargin, trackRatio: c.trackRatio, tail: true };
   }
 
   cost(f, j) {
@@ -268,6 +287,16 @@ export class Follower {
     this.next = D;
     this.position = bestJ;
     this.recentCost = this.recentCost * 0.92 + 0.08 * this.cost(frame, bestJ);
+    // How well this sound fits a random moment of the piece (a yardstick for recentCost)
+    let typical = 0;
+    for (let k = 0; k < 8; k++) {
+      this.seed = ((this.seed || 7) * 1103515245 + 12345) >>> 0;
+      typical += this.cost(frame, this.seed % M);
+    }
+    this.typicalCost = this.typicalCost === undefined ? typical / 8 : this.typicalCost * 0.97 + 0.03 * (typical / 8);
+    // A run of good tracking right after a pause shows the pianist went on from where they were
+    this.goodRun = this.trackingWell() ? (this.goodRun || 0) + 1 : 0;
+    if (this.holdTurns && this.goodRun >= this.frames.holdRelease) this.holdTurns = false;
 
     if (this.recentCost > cfg.unsureCost) {
       if (++this.lostRun > F.lost) {
@@ -310,14 +339,20 @@ export class Follower {
   // Before turning: do the last couple of seconds really sound like the music leading up to this point?
   // (Random playing can drift the tracking along; it never matches this well.) Checked at most every 0.15 s.
   confirmed() {
+    if (this.trackingWell()) return true;
     if (this.verdict && this.verdict.until > this.clock) return this.verdict.ok;
     let ok = true;
     if (this.enoughToLookUp()) {
       const { row, background } = this.searcher.search(this.recent);
-      ok = this.searcher.costNear(row, this.position, this.frames.jump) <= this.cfg.turnRatio * background;
+      ok = this.searcher.costNear(row, this.position, this.frames.jump) <= this.limits(this.position).turnRatio * background;
     }
     this.verdict = { ok, until: this.clock + this.frames.searchEvery };
     return ok;
+  }
+
+  // Is the tracker's own frame-by-frame match clearly better than a random moment of the piece?
+  trackingWell() {
+    return this.typicalCost > 0 && this.recentCost <= this.limits(this.position).trackRatio * this.typicalCost;
   }
 
   show(page, why) {
@@ -331,8 +366,8 @@ export class Follower {
   choose(candidates, background) {
     if (!candidates.length) return null;
     const best = candidates[0];
-    if (best.cost > this.cfg.goodCost || best.cost > this.cfg.goodRatio * background) return null;
-    const limit = Math.max(best.cost * this.cfg.ambiguity, best.cost + this.cfg.alikeMargin);
+    if (best.cost > this.cfg.goodCost || best.cost > this.limits(best.frame).goodRatio * background) return null;
+    const limit = Math.max(best.cost * this.cfg.ambiguity, best.cost + this.limits(best.frame).alikeMargin);
     const alike = candidates.filter((c) => c.cost <= limit);
     if (alike.length === 1) return best;
     // Music that sounds the same in several places only moves us to one on the page the pianist is looking at,
@@ -353,16 +388,16 @@ export class Follower {
 
   // We don't know where the pianist is: look up the recent playing in the whole piece
   lookUp() {
-    this.sinceLookup = 0;
     if (!this.enoughToLookUp()) return;
+    this.sinceLookup = 0;
     let { candidates, background } = this.searcher.search(this.recent);
     let pick = this.choose(candidates, background);
-    let strong = pick && candidates[0].cost <= this.cfg.strongRatio * background;
-    if (!strong && this.recent.length > this.frames.minQuery) {
+    let strong = pick && candidates[0].cost <= this.limits(candidates[0].frame).strongRatio * background;
+    if (!strong && this.recent.length > this.frames.minQuery && (!pick || this.limits(pick.frame).tail)) {
       // The older part of what we heard may be something else (noodling just before): try the last moment alone
       const tail = this.searcher.search(this.recent.slice(-this.frames.minQuery));
       const tailPick = this.choose(tail.candidates, tail.background);
-      if (tailPick && tail.candidates[0].cost <= this.cfg.strongRatio * tail.background) {
+      if (tailPick && this.limits(tailPick.frame).tail && tail.candidates[0].cost <= this.cfg.strongRatio * tail.background) {
         ({ candidates, background } = tail);
         pick = tailPick;
         strong = true;
@@ -374,11 +409,11 @@ export class Follower {
     if (this.lostAt && this.clock - this.lostAt.clock < 20 * FRAME_RATE) {
       const at = this.lostAt.position, reach = 3 * FRAME_RATE;
       const near = candidates
-        .filter((c) => Math.abs(c.frame - at) <= reach && c.cost <= this.cfg.goodRatio * background && c.cost <= this.cfg.goodCost)
+        .filter((c) => Math.abs(c.frame - at) <= reach && c.cost <= this.limits(c.frame).goodRatio * background && c.cost <= this.cfg.goodCost)
         .sort((x, y) => Math.abs(x.frame - at) - Math.abs(y.frame - at))[0];
-      if (near && near !== pick && !(pick.cost < this.cfg.jumpRatio * near.cost && near.cost - pick.cost >= this.cfg.jumpMargin)) {
+      if (near && near !== pick && !(pick.cost < this.cfg.jumpRatio * near.cost && near.cost - pick.cost >= this.limits(pick.frame).jumpMargin)) {
         pick = near;
-        strong = near.cost <= this.cfg.strongRatio * background;
+        strong = near.cost <= this.limits(near.frame).strongRatio * background;
       }
     }
     const agrees = this.pending && Math.abs(this.pending.frame - pick.frame) <= this.frames.jump;
@@ -395,7 +430,7 @@ export class Follower {
     const pick = this.choose(candidates, background);
     const here = this.searcher.costNear(row, this.position, F.jump);
     // Two checks in a row where what we hear doesn't fit where we are (or anywhere): we've lost the pianist
-    this.misfit = here <= cfg.lostRatio * background ? 0 : (this.misfit || 0) + 1;
+    this.misfit = here <= this.limits(this.position).lostRatio * background ? 0 : (this.misfit || 0) + 1;
     if (this.misfit >= 2) {
       this.misfit = 0;
       this.lostAt = { position: this.position, clock: this.clock };
@@ -416,7 +451,7 @@ export class Follower {
       this.moveTo(pick.frame);
       return;
     }
-    if (pick.cost >= cfg.jumpRatio * here || here - pick.cost < cfg.jumpMargin) {
+    if (pick.cost >= cfg.jumpRatio * here || here - pick.cost < this.limits(pick.frame).jumpMargin) {
       this.vote = null;
       if (here <= candidates[0].cost + cfg.alikeMargin) {
         // where we are fits as well as anywhere (a repeated passage): carry on
@@ -427,7 +462,7 @@ export class Follower {
     }
     const same = this.vote && Math.abs(this.vote.frame - pick.frame) < 2 * F.jump;
     this.vote = { frame: pick.frame, count: same ? this.vote.count + 1 : 1 };
-    const strong = pick.cost <= cfg.strongRatio * background;
+    const strong = pick.cost <= this.limits(pick.frame).strongRatio * background;
     if (this.vote.count >= (this.expectJump && strong ? 1 : 2)) this.moveTo(pick.frame);
   }
 
