@@ -33,6 +33,7 @@ async function run(storeName, mode, action) {
 
 export const loadLesson = (key) => run("lessons", "readonly", (s) => s.get(key)).catch(() => null);
 export const saveLesson = (key, lesson) => run("lessons", "readwrite", (s) => s.put(lesson, key));
+export const forgetLesson = (key) => run("lessons", "readwrite", (s) => s.delete(key));
 export const loadLastFile = () => run("files", "readonly", (s) => s.get("last")).catch(() => null);
 export const saveLastFile = (name, bytes) => run("files", "readwrite", (s) => s.put({ name, bytes }, "last"));
 

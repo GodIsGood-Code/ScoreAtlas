@@ -31,7 +31,8 @@ export class Microphone {
       });
       await ctx.resume().catch(() => {});
       const source = ctx.createMediaStreamSource(this.stream);
-      const extractor = new FeatureExtractor(ctx.sampleRate, (frame) => this.onFrame(frame));
+      // sound already on its way when the microphone stops is ignored
+      const extractor = new FeatureExtractor(ctx.sampleRate, (frame) => { if (this.ctx === ctx) this.onFrame(frame); });
       const sink = ctx.createGain();
       sink.gain.value = 0; // keeps the graph running without playing anything
       sink.connect(ctx.destination);
@@ -65,7 +66,11 @@ export class Microphone {
   stop() {
     try {
       if (this.source) this.source.disconnect();
-      if (this.node) this.node.disconnect();
+      if (this.node) {
+        if (this.node.port) this.node.port.onmessage = null;
+        this.node.onaudioprocess = null;
+        this.node.disconnect();
+      }
     } catch {}
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     if (this.ctx) this.ctx.close().catch(() => {});

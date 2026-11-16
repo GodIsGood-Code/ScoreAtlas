@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Makes synthetic piano performances for testing the page-turn follower.
 
-Usage: python3 tools/synth_performances.py OUT_DIR [--short | --practice] [NAMES...]
+Usage: python3 tools/synth_performances.py OUT_DIR [--short | --practice | --sections] [NAMES...]
 Needs numpy, pretty_midi, and fluidsynth with the FluidR3 GM soundfont
 (apt-get install fluidsynth fluid-soundfont-gm; pip install pretty_midi).
 
@@ -286,6 +286,14 @@ PRACTICE = {
     "p_noodle_fast": dict(initial_page=1, segments=[("play", 0, 20), ("pause", 0.6), ("noodle", 5.0), ("pause", 0.8), ("play", 20, 40)], base=92, seed=44),
     "p_back_over_turn": dict(initial_page=2, segments=[("play", 52, 72), ("pause", 1.5), ("play", 56, 72), ("pause", 1.5), ("play", 56, 76)], seed=38),
 }
+# Teaching in sections (played like "ref": same tempo, a different day), for tests/sections-eval.js
+SECTIONS = {
+    "s_teach_a": dict(segments=[("play", 0, 40)], base=74, phase=0.0, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=51),
+    "s_teach_b": dict(initial_page=2, segments=[("play", 56, 100)], base=74, phase=0.3, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=52),
+    "s_teach_c": dict(initial_page=2, segments=[("play", 36, 70)], base=74, phase=0.6, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=53),
+    "s_teach_late": dict(initial_page=3, segments=[("play", 70, 128)], base=74, phase=0.9, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=54),
+    "s_teach_cover": dict(initial_page=2, segments=[("play", 50, 110)], base=74, phase=1.2, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=55),
+}
 SHORT_CASES = {
     "short_teach": dict(base=84, depth=0.04, phase=0.0, mel=88, acc=58, noise_db=-50, seed=11),
     # practice on the short piece (pages are 4 bars = 16 beats): start on page 3, then go back to page 2
@@ -298,6 +306,12 @@ if __name__ == "__main__":
     short = "--short" in sys.argv
     only = [a for a in sys.argv[2:] if not a.startswith("--")]
     os.makedirs(out, exist_ok=True)
+    if "--sections" in sys.argv:
+        for name, cfg in SECTIONS.items():
+            if not only or name in only:
+                practice(name, out, **cfg)
+                print("made", name)
+        sys.exit(0)
     if "--practice" in sys.argv:
         for name, cfg in PRACTICE.items():
             if not only or name in only:

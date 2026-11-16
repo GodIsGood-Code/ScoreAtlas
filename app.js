@@ -1,11 +1,11 @@
 // Page Turner: shows a PDF one page at a time and turns pages from a Bluetooth pedal, taps or swipes.
-// Teach: play the piece once, turning pages yourself. Follow: play it again, from anywhere, and the app
-// turns the pages by listening, keeping up with practice (stops, repeats, jumps).
+// Teach: play the piece, or any section of it, turning pages yourself; sections add up. Follow: play it
+// again, from anywhere, and the app turns the pages by listening, keeping up with practice.
 import { Microphone } from "./listen.js";
 import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
-import { makeLesson, Follower } from "./engine/follower.js";
-import { loadLesson, saveLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
+import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
+import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
@@ -14,7 +14,7 @@ const $ = (id) => document.getElementById(id);
 const stand = $("stand"), sheet = $("sheet"), pageNum = $("pageNum");
 const fileName = $("fileName"), fileInput = $("fileInput");
 const card = $("card"), helpBtn = $("helpBtn"), keysSeen = $("keysSeen");
-const teachBtn = $("teachBtn"), followBtn = $("followBtn"), micBtn = $("micBtn");
+const teachBtn = $("teachBtn"), followBtn = $("followBtn"), micBtn = $("micBtn"), forgetBtn = $("forgetBtn");
 const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
 const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
@@ -211,8 +211,7 @@ async function startTeach() {
   if (!state.pdf || mode !== "idle") return;
   const ready = startMic(); // must begin inside the tap
   mode = "teach";
-  teach = { frames: [], turns: [] };
-  show(1);
+  teach = { frames: [], turns: [], startPage: state.page }; // a section starts wherever the pianist is
   updateButtons();
   updateModebar();
   try {
@@ -231,20 +230,23 @@ function finishTeach() {
   updateButtons();
   updateModebar();
   if (!t) return;
-  let lesson;
+  let section;
   try {
-    lesson = makeLesson(t.frames, t.turns, { name: state.name, pages: state.count, startPage: 1, taughtAt: Date.now() });
+    section = makeLesson(t.frames, t.turns, { startPage: t.startPage, taughtAt: Date.now() });
   } catch {
     toast("No music was heard, so nothing was learned. Check the microphone and try again.", 4000);
     return;
   }
-  delete lesson.source;
-  state.lesson = lesson;
+  delete section.source;
+  const before = sectionsOf(state.lesson).length;
+  state.lesson = addSection(state.lesson, section);
+  const replaced = before + 1 - sectionsOf(state.lesson).length;
   updateLessonInfo();
   updateButtons();
-  toast(`Learned ${clock(lesson.length / FRAME_RATE)} of music and ${plural(lesson.turns.length, "page turn")}`, 3000);
+  toast(`Learned this section: ${clock(section.length / FRAME_RATE)} of music, ${plural(section.turns.length, "page turn")}` +
+    (replaced ? `. It replaces ${replaced === 1 ? "an older section" : `${replaced} older sections`} of the same music.` : ""), 3500);
   keepData();
-  saveLesson(state.key, lesson).catch(() => toast("Couldn't save what was learned on this iPad.", 3000));
+  saveLesson(state.key, state.lesson).catch(() => toast("Couldn't save what was learned on this iPad.", 3000));
 }
 
 async function startFollow() {
@@ -314,14 +316,13 @@ function updateModebar(st = follower && follower.state()) {
   progress.hidden = mode !== "follow";
   if (mode === "teach") {
     const secs = teach ? teach.frames.length / FRAME_RATE : 0;
-    modeText.textContent = `Teaching · ${clock(secs)} · ${plural(teach ? teach.turns.length : 0, "page turn")} · turn pages as usual, tap Done at the end`;
+    modeText.textContent = `Teaching from page ${teach ? teach.startPage : state.page} · ${clock(secs)} · ${plural(teach ? teach.turns.length : 0, "page turn")} · tap Done at the end`;
   } else if (mode === "follow" && st) {
     progressFill.style.width = `${(st.progress * 100).toFixed(1)}%`;
     progress.dataset.unsure = String(st.unsure || st.status !== "following");
     let text;
     if (st.status === "waiting") text = "Following · start playing anywhere on this page";
     else if (st.status === "searching") text = "Following · listening for where you are";
-    else if (st.status === "finished") text = "Following · end of the piece";
     else text = st.unsure ? "Following · not sure where you are" : `Following · ${Math.round(st.progress * 100)}% through`;
     if (performance.now() < flash.until) text = `Following · ${flash.text}`;
     modeText.textContent = text;
@@ -329,6 +330,7 @@ function updateModebar(st = follower && follower.state()) {
 }
 
 function updateButtons() {
+  forgetBtn.hidden = !sectionsOf(state.lesson).length || mode !== "idle";
   teachBtn.textContent = mode === "teach" ? "Done" : "Teach";
   teachBtn.setAttribute("aria-pressed", String(mode === "teach"));
   teachBtn.disabled = !state.pdf || mode === "follow";
@@ -341,11 +343,39 @@ function updateButtons() {
 }
 
 function updateLessonInfo() {
-  const el = $("lessonInfo");
+  const el = $("lessonInfo"), sections = sectionsOf(state.lesson);
+  forgetBtn.hidden = !sections.length || mode !== "idle";
+  resetForget();
   if (!state.pdf) el.textContent = "";
-  else if (!state.lesson) el.textContent = "This piece hasn't been taught yet.";
-  else el.textContent = `This piece is taught: ${clock(state.lesson.length / FRAME_RATE)} of music, ${plural(state.lesson.turns.length, "page turn")}.`;
+  else if (!sections.length) el.textContent = "This piece hasn't been taught yet.";
+  else {
+    const secs = sections.reduce((n, s) => n + s.length, 0) / FRAME_RATE;
+    const turns = sections.reduce((n, s) => n + s.turns.length, 0);
+    el.textContent = `Taught: ${plural(sections.length, "section")}, ${clock(secs)} of music, ${plural(turns, "page turn")}.`;
+  }
 }
+
+// Forget everything this piece learned (asks for a second tap first)
+let forgetTimer = 0;
+function resetForget() {
+  clearTimeout(forgetTimer);
+  forgetBtn.textContent = "Forget";
+  forgetBtn.dataset.armed = "";
+}
+forgetBtn.addEventListener("click", () => {
+  if (!forgetBtn.dataset.armed) {
+    forgetBtn.textContent = "Tap again to forget";
+    forgetBtn.dataset.armed = "1";
+    forgetTimer = setTimeout(resetForget, 4000);
+    return;
+  }
+  const key = state.key;
+  state.lesson = null;
+  forgetLesson(key).catch(() => {});
+  updateLessonInfo();
+  updateButtons();
+  toast("Forgot everything this piece learned. Tap Teach to start again.", 3000);
+});
 
 teachBtn.addEventListener("click", () => {
   if (mode === "teach") finishTeach();

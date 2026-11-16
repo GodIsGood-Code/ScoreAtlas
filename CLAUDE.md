@@ -6,7 +6,11 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 4 (current):** practice mode. Follow starts from the page on screen and finds the pianist anywhere in the
+- **Test 5 (current):** teach in sections. Teach starts from the page on screen; each Teach adds a section to the
+  piece's lesson (`{ version: 2, sections }`), a new section that fully covers an older one replaces it, and a Forget
+  button clears the piece. Follow tracks within one section and searches all of them; at a section's end it looks
+  for the pianist again (in the next section, if taught). Lessons from Tests 3 and 4 load as one section.
+- **Test 4:** practice mode. Follow starts from the page on screen and finds the pianist anywhere in the
   piece; it keeps up with stops, repeats, jumps back (turning back a page when needed) and skips ahead, and holds
   still while the pianist plays something that isn't in the piece. A page flip by the pianist is a hint.
 - **Test 3:** Teach and Follow. The owner tested it on their piano: every page turned by itself at the taught
@@ -25,6 +29,8 @@ Steps are numbered across phases, in order. Work through them in that order unle
 1. **Basics:** PDF display, pedal and tap turns, microphone check.
 2. **Teach it once:** automatic page turns after one taught playthrough. Confirmed on the owner's piano (Test 3).
 3. **Practice mode (Test 4):** start anywhere, stops, repeats, jumps. Waiting for the owner's feedback.
+   **Teaching in sections (Test 5)** was added at the owner's request: teach any section from any page.
+   Waiting for feedback.
    Known limit: when the same music appears in two places (a written-out repeat on another page) and the pianist
    jumps between them without flipping the page, the follower may guess the copy on the page that's showing; it
    corrects itself a couple of seconds later, and a page flip by the pianist settles it at once.
@@ -78,8 +84,12 @@ Steps are numbered across phases, in order. Work through them in that order unle
     tracking by online DTW (each live frame advances the lesson by 0–3 frames; turns 0.3 s before the taught
     moment) plus practice logic: states waiting → searching ↔ following (→ finished); looks up the recent 2.5 s
     in the whole piece at the start, after pauses and when lost, and every 0.5 s while following to catch jumps.
-    Equally good places (repeats) are told apart by the page on screen. Costs: good matches about 0.03–0.06,
-    identical passages differ by about 0.015, so jumps need a 0.03 margin and 30% better.
+    Equally good places (repeats) are told apart by the page on screen, or the page next to it; music that
+    sounds the same in several places never moves the page further than that (it may be an untaught copy).
+    Costs: good matches about 0.03–0.06, wrong places 0.1 and up, identical passages differ by about 0.015, so
+    jumps need a 0.03 margin and 30% better. Sections: `sectionsOf`, `addSection` (drops sections the new one
+    `covers`: its opening and ending found in the new one at cost ≤ 0.08, in order, about the right length),
+    `flatten` (sections end to end; tracking and search never cross a section boundary).
   - `search.js`: subsequence DTW over a coarse copy of the lesson (groups of 4 frames).
   - `hearing.js`: the "Hearing" note display.
 - `audio/capture-worklet.js` (audio thread) → `listen.js` (`Microphone`) → `FeatureExtractor`.
@@ -105,6 +115,9 @@ Steps are numbered across phases, in order. Work through them in that order unle
     without a flip, noodling, skip ahead, a repeated section, back over a page turn, fast, slow, noisy). Currently
     found within 4 s after 24/25 restarts (about 1.3 s typically), 15/16 page breaks on time, 0 stray page changes;
     the misses are the known identical-copy case (p_jump_back).
+  - `python3 tools/synth_performances.py tests/output/perf --sections` then `node tests/sections-eval.js
+    tests/output/perf`: teaching in sections (replacement, three overlapping sections, out of order, an untaught gap,
+    practice sessions with sections). Currently 15/15.
   - `python3 tools/synth_performances.py tests/output/short --short` then
     `NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs`: real-browser Teach, Follow and Practice with a fake
     microphone (about 2.5 minutes).

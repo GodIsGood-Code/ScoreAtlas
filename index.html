@@ -18,7 +18,7 @@
     <header class="rail">
       <div class="ident">
         <span class="mark">Page Turner</span>
-        <span class="tag">Test 4</span>
+        <span class="tag">Test 5</span>
         <span class="file" id="fileName">Loading…</span>
       </div>
       <div class="controls">
@@ -44,15 +44,16 @@
     </main>
 
     <aside class="card" id="card" aria-label="Test steps">
-      <h2>Test 4: practice mode</h2>
+      <h2>Test 5: teach in sections</h2>
       <ol>
-        <li><b>Open a piece you've taught.</b> To teach a new one: tap <b>Teach</b>, wait a second, play it from the beginning turning pages with your pedal, then tap <b>Done</b>.</li>
-        <li><b>Flip to any page, tap Follow</b>, wait a second, and start playing anywhere on that page.</li>
-        <li><b>Practice as you normally would:</b> stop, repeat a few bars, go back, skip ahead. The pages should keep up.</li>
-        <li><b>Play something that isn't in the piece.</b> Nothing should turn.</li>
+        <li><b>Teach a section:</b> flip to where it starts, tap <b>Teach</b>, wait a second, and play it, turning pages with your pedal as usual. Tap <b>Done</b> at the end.</li>
+        <li><b>Teach more sections</b> whenever you like. Starting each one a few bars before the last one ended helps the app move from one to the next. Re-teaching a section replaces the old one.</li>
+        <li><b>Tap Follow</b> and play anywhere you've taught. Pages turn in the taught music; in music you haven't taught yet, they won't.</li>
       </ol>
-      <p class="note">If you jump to another page, flipping there with your pedal helps it find you right away.</p>
-      <p class="lesson" id="lessonInfo"></p>
+      <div class="lesson-row">
+        <p class="lesson" id="lessonInfo"></p>
+        <button id="forgetBtn" class="btn small" type="button" hidden>Forget</button>
+      </div>
       <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
 
       <section class="ear" aria-label="Notes the app hears">

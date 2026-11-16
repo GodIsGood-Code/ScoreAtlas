@@ -4,12 +4,12 @@ Sheet music on the iPad that turns its own pages by listening to you play.
 
 **Try it:** https://godisgood-code.github.io/page-turner/ (open it in Safari on an iPad)
 
-## What works now (Test 4)
+## What works now (Test 5)
 
 - Open a PDF (scans work) and read it one page at a time. The app reopens your last PDF next time.
 - Turn pages with a Bluetooth page-turn pedal, by tapping (right side forward, left side back), or by swiping.
-- **Teach:** play a piece once from the beginning, turning pages yourself. The app remembers how it sounds and
-  where you turned.
+- **Teach:** play a piece, or any section of it, turning pages yourself. The app remembers how it sounds and where
+  you turned. Teach more sections whenever you like; they add up, and re-teaching a section replaces it.
 - **Follow:** play it again and the app turns the pages for you. Start anywhere: it finds where you are and keeps
   up when you stop, repeat a few bars, go back or skip ahead.
 - A microphone check that shows which notes the app hears.

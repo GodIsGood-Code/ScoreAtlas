@@ -146,6 +146,8 @@ body {
 .card .seen, .card .lesson { font-size: 14px; }
 .card .lesson { font-weight: 700; }
 .card .seen span { font-family: var(--font-key); font-size: 13px; }
+.lesson-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.btn.small[data-armed="1"] { border-color: var(--rec); color: var(--rec); }
 .ear-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .card .note { color: var(--muted); font-size: 14px; }
 .card .actions { display: flex; gap: 8px; flex-wrap: wrap; }

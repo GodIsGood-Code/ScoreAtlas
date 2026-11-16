@@ -38,6 +38,7 @@ export const FOLLOW_SETTINGS = {
   jumpRatio: 0.7, // a jump needs a place this much better than where we think the pianist is ...
   jumpMargin: 0.03, // ... and better by at least this much (identical passages differ by about 0.015 at most)
   flipHint: 15, // seconds a page flip by the pianist counts as a hint of where they're about to play
+  coverCost: 0.08, // re-teaching: a section's opening and ending must match this well to count as covered
   jumpDistance: 2, // seconds: closer than this is not a jump
   lostAfter: 1.5, // seconds of poor matching before looking up the whole piece again
 };
@@ -77,15 +78,78 @@ export function makeLesson(frames, turns, info = {}, settings = FOLLOW_SETTINGS)
   return { version: 1, frameRate: FRAME_RATE, length, chroma, onset, sound, source, turns: lessonTurns, ...info };
 }
 
-// Which page was showing at each moment of the lesson
-function pageTimeline(lesson) {
-  const pages = new Int16Array(lesson.length);
-  let page = lesson.startPage || 1, k = 0;
-  for (let j = 0; j < lesson.length; j++) {
-    while (k < lesson.turns.length && lesson.turns[k].frame <= j) page = lesson.turns[k++].page;
-    pages[j] = page;
+// A piece can be taught in sections: each Teach adds one (a stretch of playing with its own page turns).
+// A lesson is { version: 2, sections: [...] }. Lessons from Tests 3 and 4 are a single section.
+export function sectionsOf(lesson) {
+  if (!lesson) return [];
+  return lesson.version >= 2 ? lesson.sections : [lesson];
+}
+
+// Add a newly taught section. Older sections whose music the new one fully covers are dropped,
+// so re-teaching a passage replaces it.
+export function addSection(lesson, section, settings = FOLLOW_SETTINGS) {
+  const kept = sectionsOf(lesson).filter((old) => !covers(section, old, settings));
+  return { version: 2, sections: [...kept, section] };
+}
+
+// Does section `big` contain all of section `small`? Looks up small's opening and ending in big.
+export function covers(big, small, settings = FOLLOW_SETTINGS) {
+  const q = Math.round(settings.queryLength * FRAME_RATE);
+  const frameAt = (j) => ({
+    chroma: small.chroma.subarray(j * 12, j * 12 + 12),
+    onset: small.onset.subarray(j * 12, j * 12 + 12),
+    sounding: small.sound[j] === 1,
+  });
+  const range = (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, i) => frameAt(a + i));
+  const searcher = new Searcher(flatten(big), settings);
+  const find = (frames) => {
+    const best = searcher.search(frames).candidates[0];
+    return best && best.cost <= settings.coverCost ? best.frame : -1;
+  };
+  if (small.length <= 2 * q) return find(range(0, small.length)) >= 0;
+  const head = find(range(0, q)), tail = find(range(small.length - q, small.length));
+  if (head < 0 || tail < 0 || head >= tail) return false;
+  // the stretch between them must be about as long as the old section (allowing for tempo)
+  const ratio = (tail - head) / (small.length - q);
+  return ratio > 0.4 && ratio < 2.5;
+}
+
+// All sections laid end to end, with what the follower needs to keep them apart
+export function flatten(lesson) {
+  const sections = sectionsOf(lesson);
+  const length = sections.reduce((n, sec) => n + sec.length, 0);
+  const flat = {
+    length,
+    chroma: new Float32Array(length * 12),
+    onset: new Float32Array(length * 12),
+    sound: new Uint8Array(length),
+    pageAt: new Int16Array(length), // the page showing at each moment while teaching
+    startOf: new Int32Array(length), // where each moment's section starts ...
+    endOf: new Int32Array(length), // ... and ends (exclusive)
+    starts: [],
+    ends: [],
+    turns: [],
+    firstPage: sections.length ? sections[0].startPage || 1 : 1,
+  };
+  let at = 0;
+  for (const sec of sections) {
+    flat.chroma.set(sec.chroma, at * 12);
+    flat.onset.set(sec.onset, at * 12);
+    flat.sound.set(sec.sound, at);
+    flat.startOf.fill(at, at, at + sec.length);
+    flat.endOf.fill(at + sec.length, at, at + sec.length);
+    flat.starts.push(at);
+    flat.ends.push(at + sec.length);
+    let page = sec.startPage || 1, k = 0;
+    for (let j = 0; j < sec.length; j++) {
+      while (k < sec.turns.length && sec.turns[k].frame <= j) page = sec.turns[k++].page;
+      flat.pageAt[at + j] = page;
+    }
+    for (const t of sec.turns) flat.turns.push({ frame: at + Math.min(t.frame, sec.length - 1), page: t.page });
+    at += sec.length;
   }
-  return pages;
+  flat.turns.sort((a, b) => a.frame - b.frame);
+  return flat;
 }
 
 export class Follower {
@@ -94,6 +158,7 @@ export class Follower {
   // (the pianist went somewhere else in the piece).
   constructor(lesson, { onTurn, page, settings = FOLLOW_SETTINGS } = {}) {
     const s = (seconds) => Math.max(1, Math.round(seconds * FRAME_RATE));
+    lesson = flatten(lesson);
     this.lesson = lesson;
     this.cfg = settings;
     this.onTurn = onTurn;
@@ -102,7 +167,7 @@ export class Follower {
     this.next = new Float64Array(this.M).fill(Infinity);
     this.reach = 0;
     this.position = 0;
-    this.status = "waiting"; // waiting -> searching <-> following (-> finished)
+    this.status = "waiting"; // waiting -> searching <-> following
     this.recentCost = 0;
     this.turnIndex = 0;
     this.streak = 0;
@@ -113,8 +178,8 @@ export class Follower {
     this.expectJump = true; // right after a pause or a page flip, a jump needs less proof
     this.holdTurns = false; // after a pause, wait until we know whether the pianist went on or restarted
     this.recent = [];
-    this.pageAt = pageTimeline(lesson);
-    this.page = page || lesson.startPage || 1;
+    this.pageAt = lesson.pageAt;
+    this.page = page || lesson.firstPage;
     this.searcher = new Searcher(lesson, settings);
     this.frames = {
       maxGap: s(settings.maxGap), pause: s(settings.pause), query: s(settings.queryLength), minQuery: s(settings.minQuery),
@@ -156,7 +221,7 @@ export class Follower {
     if (this.flip && --this.flip.left <= 0) this.flip = null;
     if (this.status === "waiting") this.status = "searching";
 
-    if (this.status === "following" || this.status === "finished") this.track(frame);
+    if (this.status === "following") this.track(frame);
     this.sinceLookup++;
     if (this.status === "searching" && this.sinceLookup >= F.searchEvery) this.lookUp();
     else if (this.status === "following" && this.sinceLookup >= F.checkEvery) this.checkForJump();
@@ -167,22 +232,24 @@ export class Follower {
     this.recent = []; // what was played before the pause may be from somewhere else
     this.expectJump = true;
     this.vote = null;
-    if (this.status === "finished") this.status = "searching";
     if (this.status === "following") this.holdTurns = true;
   }
 
   // One step of dynamic time warping around the current position
   track(frame) {
     const { D, next, M, cfg, frames: F } = this;
+    const startOf = this.lesson.startOf;
     const hi = Math.min(M - 1, this.reach + 3);
     const lo = Math.max(0, this.position - F.back);
     next.fill(Infinity, 0, lo);
     let best = Infinity, bestJ = this.position;
     for (let j = lo; j <= hi; j++) {
+      // the path may not cross from one taught section into another
+      const first = startOf[j];
       let b = D[j] + cfg.stayCost;
-      if (j >= 1 && D[j - 1] < b) b = D[j - 1];
-      if (j >= 2 && D[j - 2] + cfg.skip2Cost < b) b = D[j - 2] + cfg.skip2Cost;
-      if (j >= 3 && D[j - 3] + cfg.skip3Cost < b) b = D[j - 3] + cfg.skip3Cost;
+      if (j - 1 >= first && D[j - 1] < b) b = D[j - 1];
+      if (j - 2 >= first && D[j - 2] + cfg.skip2Cost < b) b = D[j - 2] + cfg.skip2Cost;
+      if (j - 3 >= first && D[j - 3] + cfg.skip3Cost < b) b = D[j - 3] + cfg.skip3Cost;
       if (b === Infinity) { next[j] = Infinity; continue; }
       const v = b + this.cost(frame, j);
       next[j] = v;
@@ -195,23 +262,30 @@ export class Follower {
     this.position = bestJ;
     this.recentCost = this.recentCost * 0.92 + 0.08 * this.cost(frame, bestJ);
 
-    if (this.status === "following") {
-      if (this.recentCost > cfg.unsureCost) {
-        if (++this.lostRun > F.lost) { this.status = "searching"; this.sinceLookup = F.searchEvery; }
-      } else this.lostRun = 0;
-      if (bestJ >= M - 1 - Math.round(0.2 * FRAME_RATE)) this.status = "finished";
-    }
+    if (this.recentCost > cfg.unsureCost) {
+      if (++this.lostRun > F.lost) { this.status = "searching"; this.sinceLookup = F.searchEvery; }
+    } else this.lostRun = 0;
     this.checkTurns();
+
+    // End of a taught section: any turn left in it is due now; then look for the pianist again
+    // (in the next section, if one was taught)
+    const end = this.lesson.endOf[bestJ];
+    if (this.status === "following" && bestJ >= end - 1 - Math.round(0.2 * FRAME_RATE)) {
+      const turns = this.lesson.turns;
+      while (this.turnIndex < turns.length && turns[this.turnIndex].frame < end) this.show(turns[this.turnIndex++].page, "turn");
+      this.status = "searching";
+      this.recent = [];
+      this.sinceLookup = 0;
+    }
   }
 
   checkTurns() {
     const turns = this.lesson.turns;
-    const finished = this.status === "finished";
-    if ((this.holdTurns || this.unsure || this.status === "searching") && !finished) { this.streak = 0; return; }
+    if (this.holdTurns || this.unsure || this.status !== "following") { this.streak = 0; return; }
     while (this.turnIndex < turns.length) {
       const t = turns[this.turnIndex];
-      if (this.position >= t.frame - this.frames.ahead || finished) {
-        if (++this.streak >= 2 || finished) {
+      if (this.position >= t.frame - this.frames.ahead) {
+        if (++this.streak >= 2) {
           this.turnIndex++;
           this.streak = 0;
           this.show(t.page, "turn");
@@ -229,15 +303,21 @@ export class Follower {
   }
 
   // Choose among lookup results. Places that sound equally good (a repeated section) are told apart by
-  // the page the pianist is looking at, then the nearest page, then the earliest place.
+  // the page the pianist is looking at, or the page next to it.
   choose(candidates) {
     if (!candidates.length || candidates[0].cost > this.cfg.goodCost) return null;
     const best = candidates[0];
     const limit = Math.max(best.cost * this.cfg.ambiguity, best.cost + this.cfg.alikeMargin);
     const alike = candidates.filter((c) => c.cost <= limit);
     if (alike.length === 1) return best;
-    const away = (c) => Math.abs(this.pageAt[c.frame] - this.page);
-    return alike.sort((a, b) => away(a) - away(b) || a.frame - b.frame)[0];
+    // Music that sounds the same in several places only moves us to one on the page the pianist is looking at,
+    // or else the page next to it (going back over a page turn is common), earlier first. Further away they may be
+    // playing a copy that was never taught; if they really jumped there, they'll flip the page.
+    for (const distance of [0, 1]) {
+      const near = alike.filter((c) => Math.abs(this.pageAt[c.frame] - this.page) === distance);
+      if (near.length) return near.sort((a, b) => a.frame - b.frame)[0];
+    }
+    return null;
   }
 
   enoughToLookUp() {
@@ -333,7 +413,8 @@ export class Follower {
       unsure: this.unsure,
       page: this.page,
       position: this.position / FRAME_RATE,
-      progress: this.M > 1 ? this.position / (this.M - 1) : 0,
+      // how far through the taught section the pianist is in
+      progress: (this.position - this.lesson.startOf[this.position]) / Math.max(1, this.lesson.endOf[this.position] - this.lesson.startOf[this.position] - 1),
       recentCost: this.recentCost,
     };
   }

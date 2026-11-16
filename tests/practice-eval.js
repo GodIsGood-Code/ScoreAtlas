@@ -24,13 +24,15 @@ const interp = (xs, ys, x) => {
   return ys[lo] + ((x - xs[lo]) / (xs[hi] - xs[lo])) * (ys[hi] - ys[lo]);
 };
 
-export function runSession(name, settings = FOLLOW_SETTINGS, cache = {}) {
+// custom: optional { lesson, beatOf(position) } to follow with another lesson (see sections-eval.js)
+export function runSession(name, settings = FOLLOW_SETTINGS, cache = {}, custom = null) {
   const json = (n) => JSON.parse(fs.readFileSync(path.join(dir, n + ".json"), "utf8"));
   const frames = (n) => (cache[n] ||= featuresOf(path.join(dir, n + ".wav")));
   const refT = json("ref"), refF = frames("ref"), S = json(name), liveF = frames(name);
   const turnBeats = refT.turnBeats;
   const turns = turnBeats.map((b, i) => ({ frame: refF.findIndex((f) => f.time >= interp(refT.beats, refT.times, b)), page: i + 2 }));
-  const lesson = makeLesson(refF, turns, { startPage: 1 }, settings);
+  const lesson = custom ? custom.lesson : makeLesson(refF, turns, { startPage: 1 }, settings);
+  const beatOf = custom ? custom.beatOf : (pos) => interp(refT.times, refT.beats, refF[lesson.source[pos]].time);
   const pageOfBeat = (b) => 1 + turnBeats.filter((t) => b >= t).length;
   const trackT = S.track.map((x) => x[0]), trackB = S.track.map((x) => x[1]);
   const beatAt = (t) => { const i = Math.min(S.track.length - 1, Math.max(0, Math.round(t / 0.05))); return trackB[i]; };
@@ -57,7 +59,7 @@ export function runSession(name, settings = FOLLOW_SETTINGS, cache = {}) {
       follower.pianistTurned(page);
     }
     const st = follower.push(f);
-    const lessonBeat = st.status === "following" || st.status === "finished" ? interp(refT.times, refT.beats, refF[lesson.source[follower.position]].time) : null;
+    const lessonBeat = st.status === "following" ? beatOf(follower.position) : null;
     timeline.push({ t: now, page, lessonBeat });
   }
 

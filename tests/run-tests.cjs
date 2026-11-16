@@ -112,6 +112,24 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   await page.click('#micBtn');
   check('Stop turns the microphone off', (await page.getAttribute('#micBtn', 'aria-pressed')) === 'false' && (await page.textContent('#earHeard')) === 'the microphone is off');
 
+  // Teach a short section from page 2, then forget it
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
+  await waitNum('1 / 4');
+  await page.keyboard.press('ArrowRight');
+  await waitNum('2 / 4');
+  await page.click('#teachBtn');
+  check('teaching starts from the page on screen', /Teaching from page 2/.test(await page.textContent('#modeText')), await page.textContent('#modeText'));
+  await page.waitForFunction(() => window.pageTurner.audioTime > 0, null, { timeout: 5000 }).catch(() => {});
+  const tStart = await page.evaluate(() => window.pageTurner.audioTime);
+  await page.waitForFunction((t) => window.pageTurner.audioTime > t + 3, tStart, { timeout: 8000 }).catch(() => {});
+  await page.click('#teachBtn');
+  check('teaching a section is stored', /Taught: 1 section/.test(await page.textContent('#lessonInfo')), await page.textContent('#lessonInfo'));
+  check('Follow is ready after teaching a section', !(await page.isDisabled('#followBtn')));
+  await page.click('#forgetBtn');
+  check('Forget asks for a second tap', (await page.textContent('#forgetBtn')) === 'Tap again to forget');
+  await page.click('#forgetBtn');
+  check('Forget clears what was learned', /hasn't been taught/.test(await page.textContent('#lessonInfo')) && (await page.isDisabled('#followBtn')));
+
   // Scanned (image-only) PDF and a broken file
   await page.setInputFiles('#fileInput', path.join(__dirname, 'fixtures/scan-test.pdf'));
   check('scan opens on page 1 of 3', await waitNum('1 / 3'), await num());
