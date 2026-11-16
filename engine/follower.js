@@ -22,17 +22,23 @@ export const FOLLOW_SETTINGS = {
   silenceCost: 0.9, // cost of sound in one and silence in the other
   onsetWeight: 0.3, // how much "which notes were just struck" counts, versus "which notes sound"
   anticipation: 0.3, // seconds: turn this much before the moment the page was turned in the lesson
-  unsureCost: 0.5, // recent match cost above which the follower is unsure and holds turns
+  unsureCost: 0.25, // recent match cost above which the follower is unsure and holds turns
   searchBack: 30, // seconds behind the current position still tracked (keeps long pieces light)
   // Practice: finding the pianist anywhere in the piece
   searchFactor: 4, // the search uses groups of this many frames
   pause: 1.0, // seconds of silence after which the pianist may restart anywhere
   queryLength: 2.5, // seconds of recent playing that are looked up
-  minQuery: 1.2, // seconds of playing needed before looking up
-  searchEvery: 0.25, // seconds between lookups while lost
+  minQuery: 0.8, // seconds of playing needed before looking up
+  searchEvery: 0.15, // seconds between lookups while lost
   checkEvery: 0.5, // seconds between lookups while tracking (to catch jumps)
   separation: 3, // seconds: places closer than this count as the same place
   goodCost: 0.2, // a lookup result must be at least this good to be trusted (good matches are about 0.03–0.06)
+  // Compared with how well a typical place in the piece fits (the "background"), real playing matches at under
+  // about 0.2 of it and random playing at over about 0.5, whatever the room or piano
+  goodRatio: 0.35, // a lookup result must stand out at least this much to be trusted ...
+  strongRatio: 0.2, // ... and this much to be acted on at once (otherwise two lookups in a row must agree)
+  turnRatio: 0.4, // before a page turn, the recent playing must match the music before it at least this well
+  lostRatio: 0.5, // two checks in a row fitting worse than this (wrong notes fit better) mean the pianist is lost
   ambiguity: 1.12, // results within this ratio of the best count as equally good (e.g. a repeat) ...
   alikeMargin: 0.04, // ... or within this much of it: tiny differences between identical passages are noise
   jumpRatio: 0.7, // a jump needs a place this much better than where we think the pianist is ...
@@ -216,6 +222,7 @@ export class Follower {
       // Before the music starts, and during real pauses, hold still
       if (this.status === "waiting" || this.silentRun > F.maxGap) return this.state();
     }
+    this.clock = (this.clock || 0) + 1;
     this.recent.push(frame);
     if (this.recent.length > F.query) this.recent.shift();
     if (this.flip && --this.flip.left <= 0) this.flip = null;
@@ -263,7 +270,11 @@ export class Follower {
     this.recentCost = this.recentCost * 0.92 + 0.08 * this.cost(frame, bestJ);
 
     if (this.recentCost > cfg.unsureCost) {
-      if (++this.lostRun > F.lost) { this.status = "searching"; this.sinceLookup = F.searchEvery; }
+      if (++this.lostRun > F.lost) {
+        this.lostAt = { position: this.position, clock: this.clock };
+        this.status = "searching";
+        this.sinceLookup = F.searchEvery;
+      }
     } else this.lostRun = 0;
     this.checkTurns();
 
@@ -285,7 +296,7 @@ export class Follower {
     while (this.turnIndex < turns.length) {
       const t = turns[this.turnIndex];
       if (this.position >= t.frame - this.frames.ahead) {
-        if (++this.streak >= 2) {
+        if (++this.streak >= 2 && this.confirmed()) {
           this.turnIndex++;
           this.streak = 0;
           this.show(t.page, "turn");
@@ -296,6 +307,19 @@ export class Follower {
     }
   }
 
+  // Before turning: do the last couple of seconds really sound like the music leading up to this point?
+  // (Random playing can drift the tracking along; it never matches this well.) Checked at most every 0.15 s.
+  confirmed() {
+    if (this.verdict && this.verdict.until > this.clock) return this.verdict.ok;
+    let ok = true;
+    if (this.enoughToLookUp()) {
+      const { row, background } = this.searcher.search(this.recent);
+      ok = this.searcher.costNear(row, this.position, this.frames.jump) <= this.cfg.turnRatio * background;
+    }
+    this.verdict = { ok, until: this.clock + this.frames.searchEvery };
+    return ok;
+  }
+
   show(page, why) {
     if (page === this.page) return;
     this.page = page;
@@ -304,9 +328,10 @@ export class Follower {
 
   // Choose among lookup results. Places that sound equally good (a repeated section) are told apart by
   // the page the pianist is looking at, or the page next to it.
-  choose(candidates) {
-    if (!candidates.length || candidates[0].cost > this.cfg.goodCost) return null;
+  choose(candidates, background) {
+    if (!candidates.length) return null;
     const best = candidates[0];
+    if (best.cost > this.cfg.goodCost || best.cost > this.cfg.goodRatio * background) return null;
     const limit = Math.max(best.cost * this.cfg.ambiguity, best.cost + this.cfg.alikeMargin);
     const alike = candidates.filter((c) => c.cost <= limit);
     if (alike.length === 1) return best;
@@ -330,8 +355,35 @@ export class Follower {
   lookUp() {
     this.sinceLookup = 0;
     if (!this.enoughToLookUp()) return;
-    const pick = this.choose(this.searcher.search(this.recent).candidates);
-    if (pick) this.moveTo(pick.frame);
+    let { candidates, background } = this.searcher.search(this.recent);
+    let pick = this.choose(candidates, background);
+    let strong = pick && candidates[0].cost <= this.cfg.strongRatio * background;
+    if (!strong && this.recent.length > this.frames.minQuery) {
+      // The older part of what we heard may be something else (noodling just before): try the last moment alone
+      const tail = this.searcher.search(this.recent.slice(-this.frames.minQuery));
+      const tailPick = this.choose(tail.candidates, tail.background);
+      if (tailPick && tail.candidates[0].cost <= this.cfg.strongRatio * tail.background) {
+        ({ candidates, background } = tail);
+        pick = tailPick;
+        strong = true;
+      }
+    }
+    if (!pick) { this.pending = null; return; }
+    // Just lost the pianist? They most likely picked up where they were (playing something else doesn't move
+    // them through the piece): prefer the good place closest to there, unless somewhere else fits clearly better
+    if (this.lostAt && this.clock - this.lostAt.clock < 20 * FRAME_RATE) {
+      const at = this.lostAt.position, reach = 3 * FRAME_RATE;
+      const near = candidates
+        .filter((c) => Math.abs(c.frame - at) <= reach && c.cost <= this.cfg.goodRatio * background && c.cost <= this.cfg.goodCost)
+        .sort((x, y) => Math.abs(x.frame - at) - Math.abs(y.frame - at))[0];
+      if (near && near !== pick && !(pick.cost < this.cfg.jumpRatio * near.cost && near.cost - pick.cost >= this.cfg.jumpMargin)) {
+        pick = near;
+        strong = near.cost <= this.cfg.strongRatio * background;
+      }
+    }
+    const agrees = this.pending && Math.abs(this.pending.frame - pick.frame) <= this.frames.jump;
+    if (strong || agrees) this.moveTo(pick.frame);
+    else this.pending = pick;
   }
 
   // We think we know where the pianist is: check that nowhere else fits much better
@@ -339,10 +391,19 @@ export class Follower {
     this.sinceLookup = 0;
     if (!this.enoughToLookUp()) return;
     const F = this.frames, cfg = this.cfg;
-    const { candidates, row } = this.searcher.search(this.recent);
-    const pick = this.choose(candidates);
-    if (!pick) { this.vote = null; return; }
+    const { candidates, row, background } = this.searcher.search(this.recent);
+    const pick = this.choose(candidates, background);
     const here = this.searcher.costNear(row, this.position, F.jump);
+    // Two checks in a row where what we hear doesn't fit where we are (or anywhere): we've lost the pianist
+    this.misfit = here <= cfg.lostRatio * background ? 0 : (this.misfit || 0) + 1;
+    if (this.misfit >= 2) {
+      this.misfit = 0;
+      this.lostAt = { position: this.position, clock: this.clock };
+      this.status = "searching";
+      this.sinceLookup = F.searchEvery;
+      return;
+    }
+    if (!pick) { this.vote = null; return; }
     if (Math.abs(pick.frame - this.position) <= F.jump) {
       // the best fit is where we already are: the pianist went on from there
       this.vote = null;
@@ -366,7 +427,8 @@ export class Follower {
     }
     const same = this.vote && Math.abs(this.vote.frame - pick.frame) < 2 * F.jump;
     this.vote = { frame: pick.frame, count: same ? this.vote.count + 1 : 1 };
-    if (this.vote.count >= (this.expectJump ? 1 : 2)) this.moveTo(pick.frame);
+    const strong = pick.cost <= cfg.strongRatio * background;
+    if (this.vote.count >= (this.expectJump && strong ? 1 : 2)) this.moveTo(pick.frame);
   }
 
   // Start tracking from lesson frame j (after a lookup), and show the page that goes with it
@@ -384,6 +446,10 @@ export class Follower {
     this.holdTurns = false;
     this.status = "following";
     this.flip = null;
+    this.pending = null;
+    this.verdict = null;
+    this.misfit = 0;
+    this.lostAt = null;
     const turns = this.lesson.turns;
     this.turnIndex = turns.findIndex((t) => t.frame - this.frames.ahead > j);
     if (this.turnIndex < 0) this.turnIndex = turns.length;

@@ -14,7 +14,8 @@ import { makeLesson, Follower, FOLLOW_SETTINGS } from "../engine/follower.js";
 
 const dir = process.env.PERF_DIR || process.argv[2] || "tests/output/perf";
 export const SESSIONS = ["p_start_mid", "p_start_mid_no_flip", "p_repeat_passage", "p_jump_back", "p_jump_back_flip", "p_noodle", "p_skip_ahead", "p_repeat_section", "p_back_over_turn",
-  "p_start_mid_fast", "p_repeat_passage_slow", "p_skip_ahead_noisy", "p_noodle_fast"];
+  "p_start_mid_fast", "p_repeat_passage_slow", "p_skip_ahead_noisy", "p_noodle_fast",
+  "p_noodle_scale", "p_noodle_random", "p_noodle_chords", "p_noodle_improv", "p_warmup_first"];
 
 const interp = (xs, ys, x) => {
   if (x <= xs[0]) return ys[0];

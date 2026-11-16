@@ -191,6 +191,56 @@ def render(inst, out_dir, name, end_time, noise_db, tilt, gain_db, seed):
         w.writeframes((y * 32767).astype(np.int16).tobytes())
 
 
+def noodle(inst, rng, t, seconds, kind):
+    """Playing something that isn't the piece. Most kinds stay in the piece's key (C major), which is harder."""
+    add = lambda p, a, b, v=80: inst.notes.append(pretty_midi.Note(velocity=v, pitch=p, start=t + a, end=t + b))
+    major = [p for p in range(48, 89) if p % 12 in MAJOR]
+    if kind == "pent":  # F-sharp pentatonic over F-sharp chords: notes the piece never uses together
+        pent = [66, 68, 70, 73, 75, 78, 80, 82, 85, 87]
+        k = 0
+        while k * 0.125 < seconds:
+            add(pent[(k * 3 + rng.randrange(3)) % len(pent)], k * 0.125, (k + 1) * 0.125)
+            if k % 8 == 0:
+                for q in (42, 49, 54):
+                    add(q, k * 0.125, (k + 8) * 0.125, 60)
+            k += 1
+    elif kind == "scale":  # C major scales up and down, hands an octave apart, like a warm-up
+        run = [p for p in major if 60 <= p <= 84]
+        seq = run + run[-2:0:-1]
+        k = 0
+        while k * 0.11 < seconds:
+            p = seq[k % len(seq)]
+            add(p, k * 0.11, (k + 1) * 0.11)
+            add(p - 12, k * 0.11, (k + 1) * 0.11, 65)
+            k += 1
+    elif kind == "random":  # random notes of C major, with pedal
+        k = 0
+        while k * 0.2 < seconds:
+            add(rng.choice([p for p in major if p >= 60]), k * 0.2, k * 0.2 + 0.6)
+            if k % 4 == 0:
+                add(rng.choice([p for p in major if p < 60]), k * 0.2, k * 0.2 + 0.8, 65)
+            k += 1
+    elif kind == "chords":  # block chords in C: I vi IV V, then ii V I
+        prog = [(48, [60, 64, 67]), (45, [60, 64, 69]), (41, [60, 65, 69]), (43, [59, 62, 67]), (50, [62, 65, 69]), (43, [59, 62, 65, 67]), (48, [60, 64, 67])]
+        k = 0
+        while k * 0.9 < seconds:
+            bass, ch = prog[k % len(prog)]
+            for p in [bass] + ch:
+                add(p, k * 0.9, k * 0.9 + 0.85, 70)
+            k += 1
+    elif kind == "improv":  # broken chords on a progression the piece doesn't use, with a made-up tune on top
+        prog = [57, 53, 48, 55]  # Am F C G roots in octave 3-4
+        k = 0
+        while k * 0.15 < seconds:
+            root = prog[(k // 8) % 4] - 12
+            third = 3 if root % 12 in (9,) else 4
+            pattern = [root, root + 7, root + 12 + third, root + 7]
+            add(pattern[k % 4], k * 0.15, k * 0.15 + 0.3, 60)
+            if k % 2 == 0:
+                add(rng.choice([p for p in major if 67 <= p <= 81]), k * 0.15, k * 0.15 + 0.3, 85)
+            k += 1
+
+
 def practice(name, out_dir, segments, initial_page=1, short=False, base=78, depth=0.05, phase=0.6, mel=90, acc=56, vel_jitter=6,
              timing=0.012, noise_db=-46, tilt=0.2, gain_db=0.0, seed=21):
     """A practice session: segments of ("play", from_beat, to_beat), ("pause", seconds) or ("noodle", seconds)
@@ -235,16 +285,7 @@ def practice(name, out_dir, segments, initial_page=1, short=False, base=78, dept
             mark(t, t + seg[1], lambda _: -1)
             t += seg[1]
         elif seg[0] == "noodle":
-            # F-sharp major pentatonic runs over F-sharp chords: notes the piece never uses together
-            pent = [66, 68, 70, 73, 75, 78, 80, 82, 85, 87]
-            k, step = 0, 0.125
-            while k * step < seg[1]:
-                p = pent[(k * 3 + rng.randrange(3)) % len(pent)]
-                inst.notes.append(pretty_midi.Note(velocity=80, pitch=p, start=t + k * step, end=t + (k + 1) * step))
-                if k % 8 == 0:
-                    for q in (42, 49, 54):
-                        inst.notes.append(pretty_midi.Note(velocity=60, pitch=q, start=t + k * step, end=t + (k + 8) * step))
-                k += 1
+            noodle(inst, rng, t, seg[1], seg[2] if len(seg) > 2 else "pent")
             mark(t, t + seg[1], lambda _: -1)
             t += seg[1]
     render(inst, out_dir, name, t + TAIL, noise_db, tilt, gain_db, seed)
@@ -283,6 +324,11 @@ PRACTICE = {
     "p_start_mid_fast": dict(initial_page=3, segments=[("play", 64, 112)], base=94, phase=1.9, seed=41),
     "p_repeat_passage_slow": dict(initial_page=2, segments=[("play", 40, 56), ("pause", 1.5), ("play", 40, 56), ("pause", 1.2), ("play", 40, 72)], base=60, phase=2.4, seed=42),
     "p_skip_ahead_noisy": dict(initial_page=1, segments=[("play", 0, 12), ("pause", 2.0), ("play", 70, 104)], noise_db=-33, tilt=0.5, seed=43),
+    "p_noodle_scale": dict(initial_page=1, segments=[("play", 0, 20), ("pause", 0.6), ("noodle", 8.0, "scale"), ("pause", 0.8), ("play", 20, 40)], seed=45),
+    "p_noodle_random": dict(initial_page=2, segments=[("play", 36, 56), ("pause", 0.6), ("noodle", 8.0, "random"), ("pause", 0.8), ("play", 56, 72)], seed=46),
+    "p_noodle_chords": dict(initial_page=3, segments=[("play", 64, 84), ("pause", 0.6), ("noodle", 8.0, "chords"), ("pause", 0.8), ("play", 84, 104)], seed=47),
+    "p_noodle_improv": dict(initial_page=1, segments=[("play", 4, 24), ("pause", 0.6), ("noodle", 8.0, "improv"), ("pause", 0.8), ("play", 24, 40)], seed=48),
+    "p_warmup_first": dict(initial_page=3, segments=[("noodle", 6.0, "scale"), ("pause", 1.0), ("noodle", 6.0, "chords"), ("pause", 1.2), ("play", 66, 90)], seed=49),
     "p_noodle_fast": dict(initial_page=1, segments=[("play", 0, 20), ("pause", 0.6), ("noodle", 5.0), ("pause", 0.8), ("play", 20, 40)], base=92, seed=44),
     "p_back_over_turn": dict(initial_page=2, segments=[("play", 52, 72), ("pause", 1.5), ("play", 56, 72), ("pause", 1.5), ("play", 56, 76)], seed=38),
 }

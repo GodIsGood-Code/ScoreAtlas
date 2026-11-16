@@ -6,7 +6,12 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 5 (current):** teach in sections. Teach starts from the page on screen; each Teach adds a section to the
+- **Test 6 (current):** Test 5 plus steadier following. The owner's Test 4 feedback: found them in about a second
+  after a skip, corrected wrong pages quickly, no early/late/missed turns, but random playing sometimes changed the
+  page; they asked for fewer false matches and faster finding. Test 6 checks matches against how well a typical
+  place fits (see below), confirms each page turn, notices being lost, and looks up after 0.8 s instead of 1.2 s.
+  The owner also asked for bigger checkpoints: do several roadmap steps before each test.
+- **Test 5:** teach in sections. Teach starts from the page on screen; each Teach adds a section to the
   piece's lesson (`{ version: 2, sections }`), a new section that fully covers an older one replaces it, and a Forget
   button clears the piece. Follow tracks within one section and searches all of them; at a section's end it looks
   for the pianist again (in the next section, if taught). Lessons from Tests 3 and 4 load as one section.
@@ -87,7 +92,11 @@ Steps are numbered across phases, in order. Work through them in that order unle
     Equally good places (repeats) are told apart by the page on screen, or the page next to it; music that
     sounds the same in several places never moves the page further than that (it may be an untaught copy).
     Costs: good matches about 0.03–0.06, wrong places 0.1 and up, identical passages differ by about 0.015, so
-    jumps need a 0.03 margin and 30% better. Sections: `sectionsOf`, `addSection` (drops sections the new one
+    jumps need a 0.03 margin and 30% better. Scale-free checks against the search's `background` (median cost over
+    the piece): real playing matches at under about 0.2 of it, random playing at over about 0.5. A lookup must be
+    under 0.35 of it (under 0.2 acts at once, otherwise two lookups must agree; if the full 2.5 s isn't conclusive,
+    the last 0.8 s is tried alone); a page turn needs the recent playing near the turn under 0.4; two checks in a row
+    over 0.5 mean the pianist is lost. After losing them, the closest good place within 3 s of where they were wins. Sections: `sectionsOf`, `addSection` (drops sections the new one
     `covers`: its opening and ending found in the new one at cost ≤ 0.08, in order, about the right length),
     `flatten` (sections end to end; tracking and search never cross a section boundary).
   - `search.js`: subsequence DTW over a coarse copy of the lesson (groups of 4 frames).
@@ -111,10 +120,11 @@ Steps are numbered across phases, in order. Work through them in that order unle
     Chroma-based display accuracy has a ceiling (about 80% of notes caught, about 60% of shown notes correct);
     reliable note-by-note recognition would need a trained model (for example Spotify's Basic Pitch).
   - `python3 tools/synth_performances.py tests/output/perf --practice` then `node tests/practice-eval.js
-    tests/output/perf`: 13 practice sessions (start mid-piece with and without flipping, repeats, jump back with and
-    without a flip, noodling, skip ahead, a repeated section, back over a page turn, fast, slow, noisy). Currently
-    found within 4 s after 24/25 restarts (about 1.3 s typically), 15/16 page breaks on time, 0 stray page changes;
-    the misses are the known identical-copy case (p_jump_back).
+    tests/output/perf`: 18 practice sessions (start mid-piece with and without flipping, repeats, jump back with and
+    without a flip, skip ahead, a repeated section, back over a page turn, fast, slow, noisy, and noodling: F-sharp
+    pentatonic, plus scales, random notes, chords and a made-up tune in the piece's key, and a warm-up before
+    starting). Currently found within 4 s after 33/34 restarts (about 0.8 s typically), 19/20 page breaks on time,
+    0 stray page changes; the misses are the known identical-copy case (p_jump_back).
   - `python3 tools/synth_performances.py tests/output/perf --sections` then `node tests/sections-eval.js
     tests/output/perf`: teaching in sections (replacement, three overlapping sections, out of order, an untaught gap,
     practice sessions with sections). Currently 15/15.

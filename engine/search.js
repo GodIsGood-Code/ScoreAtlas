@@ -150,7 +150,10 @@ export class Searcher {
       taken.push(bj);
       candidates.push({ frame: this.endFrame[bj], cost: best });
     }
-    return { candidates, row };
+    // How well a typical place fits: a real match stands out far below this; random playing doesn't
+    const sorted = Float64Array.from(row).sort();
+    const background = sorted[Math.floor(sorted.length / 2)];
+    return { candidates, row, background };
   }
 
   // Best cost of ending within `radius` lesson frames of `frame`
