@@ -6,7 +6,9 @@ import { Microphone } from "./listen.js";
 import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
-import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
+import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData, savePiece, loadPiece, loadMeta, putMeta } from "./store.js";
+import { Marks, INKS } from "./marks.js";
+import { LibraryUI } from "./library.js";
 import { readScore, keepParts, withPageStarts, shiftPages, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
@@ -42,7 +44,14 @@ let heatOn = true;
 const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
 const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
-let mode = "idle"; // idle, teach or follow
+let mode = "idle"; // idle, teach, follow or replay
+let locked = false; // performance lock: taps and Pencil do nothing, only the pedal turns pages
+let marksKey = null; // the piece the markings belong to
+const marks = new Marks({
+  save: (data) => { if (marksKey) saveLesson(`${marksKey}|marks`, data).catch(() => toast("Couldn't save your markings on this iPad.", 3000)); },
+  enabled: () => !locked && mode !== "replay",
+});
+let setlist = null; // { list: { id, name, items }, index } while playing a setlist
 let teach = null; // { frames, turns } while teaching
 let follower = null;
 let micCheck = false;
@@ -78,7 +87,10 @@ async function openPdf(data, name) {
     return false;
   }
   if (token !== openToken) { pdf.destroy(); return false; } // a newer file was opened meanwhile
-  stopMode();
+  stopMode(!!setlist);
+  marks.flush();
+  marksKey = null;
+  marks.load(null);
   const old = state.pdf;
   dropCache(() => true);
   Object.assign(state, { pdf, count: pdf.numPages, page: 1, name, lesson: null });
@@ -88,8 +100,10 @@ async function openPdf(data, name) {
   if (old) old.destroy();
   await show(1);
   const key = state.key;
-  const lesson = await loadLesson(key);
+  const [lesson, marked] = await Promise.all([loadLesson(key), loadLesson(`${key}|marks`)]);
   if (state.key === key) {
+    marksKey = key;
+    marks.load(marked);
     state.lesson = lesson || null;
     updateLessonInfo();
     updateButtons();
@@ -98,20 +112,33 @@ async function openPdf(data, name) {
 }
 
 /* ---------- Drawing pages ---------- */
+// Display options (kept on this iPad): two pages side by side when the iPad is sideways, and half-page turns (the
+// top half of the next page shows while the bottom half of this one is still being played)
+const view = { twoUp: false, halfTurns: false, half: false };
+try { Object.assign(view, JSON.parse(localStorage.getItem("pt-view") || "{}"), { half: false }); } catch {}
+const saveView = () => { try { localStorage.setItem("pt-view", JSON.stringify({ twoUp: view.twoUp, halfTurns: view.halfTurns })); } catch {} };
+function isTwoUp() {
+  const r = stand.getBoundingClientRect();
+  return view.twoUp && state.count > 1 && r.width > r.height * 1.1;
+}
+// the first page of the pair showing page n (pairs 1–2, 3–4, ...)
+const spreadStart = (n) => (n % 2 ? n : n - 1);
+
 function layoutKey() {
   const r = stand.getBoundingClientRect();
-  return `${Math.round(r.width)}x${Math.round(r.height)}@${window.devicePixelRatio || 1}`;
+  return `${Math.round(r.width)}x${Math.round(r.height)}@${window.devicePixelRatio || 1}${isTwoUp() ? "|2" : ""}`;
 }
 
 function render(n) {
   const key = `${n}|${state.layout}`;
   if (state.cache.has(key)) return state.cache.get(key);
   const pdf = state.pdf;
+  const two = isTwoUp();
   const job = (async () => {
     const page = await pdf.getPage(n);
     const base = page.getViewport({ scale: 1 });
     const r = stand.getBoundingClientRect();
-    const w = Math.max(80, r.width - 24), h = Math.max(80, r.height - 24);
+    const w = Math.max(80, two ? (r.width - 36) / 2 : r.width - 24), h = Math.max(80, r.height - 24);
     const fit = Math.min(w / base.width, h / base.height);
     let scale = fit * Math.min(window.devicePixelRatio || 1, 3);
     const maxPixels = 16e6; // iPad Safari refuses canvases larger than about 16.7 million pixels
@@ -144,26 +171,103 @@ function dropCache(shouldDrop) {
   }
 }
 
+// What is on screen: [{ page, canvas, unit, y0, y1 }] (the part of each page that shows, as fractions of its height)
+let shown = [];
+const showing = (page, y = 0.5) => shown.find((e) => e.page === page && y >= e.y0 - 1e-6 && y <= e.y1 + 1e-6) || null;
+// the place on screen of a measure box, if that part of its page shows
+const entryFor = (box) => (box ? showing(box.page, (box.y0 + box.y1) / 2) : null);
+
+// A page with its Pencil markings on top
+function pageUnit(n, canvas) {
+  const unit = document.createElement("div");
+  unit.className = "page";
+  unit.dataset.page = String(n);
+  unit.style.width = canvas.style.width;
+  unit.style.height = canvas.style.height;
+  unit.append(canvas);
+  const layer = marks.layer(n, parseFloat(canvas.style.width), parseFloat(canvas.style.height));
+  if (layer) unit.append(layer);
+  return unit;
+}
+
+// Where to split a page for half-page turns: the empty gap between lines of music nearest the middle
+const splits = new Map();
+function splitOf(n, canvas) {
+  const key = `${n}|${state.layout}`;
+  if (splits.has(key)) return splits.get(key);
+  let best = 0.5;
+  try {
+    const w = 160, h = Math.round((canvas.height / canvas.width) * w);
+    const small = document.createElement("canvas");
+    small.width = w;
+    small.height = h;
+    const ctx = small.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(canvas, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const blank = (y) => { let ink = 0; for (let x = 0; x < w; x++) if (px[(y * w + x) * 4] < 170) ink++; return ink <= 1; };
+    let bestDist = Infinity;
+    for (let y = Math.round(h * 0.3), run = -1; y <= Math.round(h * 0.7); y++) {
+      if (blank(y)) { if (run < 0) run = y; continue; }
+      if (run >= 0 && y - run >= 2) {
+        const mid = (run + y) / 2 / h;
+        if (Math.abs(mid - 0.5) < bestDist) { bestDist = Math.abs(mid - 0.5); best = mid; }
+      }
+      run = -1;
+    }
+  } catch {}
+  splits.set(key, best);
+  return best;
+}
+
 let showToken = 0;
-async function show(n) {
+// opts.half: show the top half of the next page over the bottom half of this one
+async function show(n, opts = {}) {
   if (!state.pdf) return;
   state.page = Math.max(1, Math.min(state.count, n));
+  const two = isTwoUp();
+  view.half = !!opts.half && !two && state.page < state.count;
   updateCounter();
   const token = ++showToken;
-  let canvas;
+  const first = two ? spreadStart(state.page) : state.page;
+  const pages = two ? [first, first + 1].filter((p) => p <= state.count) : view.half ? [state.page, state.page + 1] : [state.page];
+  let canvases;
   try {
-    canvas = await render(state.page);
+    canvases = await Promise.all(pages.map((p) => render(p)));
   } catch {
     if (token === showToken) setStatus(`Page ${state.page} couldn't be drawn.`, "error");
     return;
   }
   if (token !== showToken) return;
-  sheet.replaceChildren(canvas, overlay, marker);
+  const units = pages.map((p, i) => pageUnit(p, canvases[i]));
+  if (view.half) {
+    // the next page's top half above this page's bottom half
+    const [mine, next] = units;
+    const h = parseFloat(canvases[0].style.height), h2 = parseFloat(canvases[1].style.height);
+    const fMine = splitOf(pages[0], canvases[0]), fNext = splitOf(pages[1], canvases[1]);
+    const top = document.createElement("div"), bottom = document.createElement("div");
+    top.className = bottom.className = "half";
+    top.style.height = `${fNext * h2}px`;
+    bottom.style.height = `${(1 - fMine) * h}px`;
+    top.style.width = bottom.style.width = canvases[0].style.width;
+    top.append(next);
+    bottom.append(mine);
+    mine.style.marginTop = `${-fMine * h}px`;
+    const stack = document.createElement("div");
+    stack.className = "half-stack";
+    stack.append(top, bottom);
+    sheet.replaceChildren(stack, overlay, marker);
+    shown = [{ page: pages[1], canvas: canvases[1], unit: next, y0: 0, y1: fNext }, { page: pages[0], canvas: canvases[0], unit: mine, y0: fMine, y1: 1 }];
+  } else {
+    sheet.replaceChildren(...units, overlay, marker);
+    shown = pages.map((p, i) => ({ page: p, canvas: canvases[i], unit: units[i], y0: 0, y1: 1 }));
+  }
+  sheet.classList.toggle("two-up", two);
   drawOverlay();
   setStatus(null);
-  // Keep the pages on either side ready so a turn is instant
-  const near = [state.page + 1, state.page - 1].filter((p) => p >= 1 && p <= state.count);
-  const keep = new Set([state.page, ...near].map((p) => `${p}|${state.layout}`));
+  // Keep the pages around ready so a turn is instant
+  const around = two ? [first - 2, first - 1, first + 2, first + 3] : [state.page - 1, state.page + 1, state.page + 2];
+  const near = around.filter((p) => p >= 1 && p <= state.count);
+  const keep = new Set([...pages, ...near].map((p) => `${p}|${state.layout}`));
   dropCache((key) => !keep.has(key));
   near.forEach((p) => render(p).catch(() => {}));
 }
@@ -171,9 +275,16 @@ async function show(n) {
 // A turn by the pianist: pedal, tap, swipe or the arrow buttons
 function turn(step) {
   if (!state.pdf) return;
-  const target = state.page + step;
-  if (target < 1) return toast("First page");
-  if (target > state.count) return toast("Last page");
+  const two = isTwoUp();
+  // half-page turns: forward goes to the half view first, then to the next page; back undoes that
+  if (view.halfTurns && !two) {
+    if (step > 0 && !view.half && state.page < state.count) { show(state.page, { half: true }); return; }
+    if (step < 0 && view.half) { show(state.page); return; }
+  }
+  const from = two ? spreadStart(state.page) : state.page;
+  const target = from + step * (two ? 2 : 1);
+  if (target < 1) { if (!setlistStep(-1)) toast("First page"); return; }
+  if (target > state.count) { if (!setlistStep(1)) toast("Last page"); return; }
   show(target);
   if (mode !== "idle") turnLog.push({ page: target, time: lastFrameTime, how: "pianist" });
   if (mode === "teach" && teach) {
@@ -185,9 +296,10 @@ function turn(step) {
 }
 
 function updateCounter() {
-  pageNum.value = state.pdf ? `${state.page} / ${state.count}` : "– / –";
-  $("prevBtn").disabled = !state.pdf || state.page <= 1;
-  $("nextBtn").disabled = !state.pdf || state.page >= state.count;
+  const two = isTwoUp(), first = spreadStart(state.page);
+  pageNum.value = !state.pdf ? "– / –" : two && first < state.count ? `${first}–${first + 1} / ${state.count}` : `${state.page}${view.half ? "½" : ""} / ${state.count}`;
+  $("prevBtn").disabled = !state.pdf || (state.page <= 1 && !view.half && !setlist);
+  $("nextBtn").disabled = !state.pdf || ((two ? first + 1 : state.page) >= state.count && !setlist);
 }
 
 let resizeTimer = 0;
@@ -197,7 +309,7 @@ new ResizeObserver(() => {
     const key = layoutKey();
     if (key === state.layout) return;
     state.layout = key;
-    show(state.page);
+    show(state.page, { half: view.half });
   }, 150);
 }).observe(stand);
 state.layout = layoutKey();
@@ -305,11 +417,11 @@ async function startFollow() {
   }
 }
 
-function stopMode() {
+function stopMode(quiet = false) {
   if (mode === "teach") teach = null;
   if (mode === "replay") { stopReplay(); return; }
   if (mode === "follow") keepRecording();
-  if (mode === "follow" && practice && practice.n > 10 * FRAME_RATE) finishPractice();
+  if (mode === "follow" && !quiet && practice && practice.n > 10 * FRAME_RATE) finishPractice();
   practice = null;
   mode = "idle";
   follower = null;
@@ -330,6 +442,10 @@ window.pageTurner = {
   turns: turnLog,
   // the measure boxes on the page on screen (page fractions), for tests
   layoutOnPage: () => { const sec = scoreSectionOf(); return sec && sec.layout ? sec.layout.filter((b) => b && b.page === state.page) : []; },
+  get view() { return { ...view, twoUp: isTwoUp(), shown: shown.map((e) => e.page) }; },
+  get locked() { return locked; },
+  get setlist() { return setlist ? { name: setlist.list.name, index: setlist.index, count: setlist.list.items.length } : null; },
+  marks: () => marks.data(),
 };
 
 function onFrame(frame) {
@@ -347,6 +463,7 @@ function onFrame(frame) {
       if (loop) loopFrame(frame, sure);
     }
     if (frame.index % 5 === 0) updateModebar(st);
+    if (frame.index % 5 === 0 && !(follower.lesson.layout)) halfTurnByTime();
     if (frame.index % 2 === 0) drawMarker();
   }
 }
@@ -475,7 +592,6 @@ applyBtn.addEventListener("click", () => {
 let movesSeen = 0;
 function drawMarker() {
   const f = follower && follower.lesson;
-  const canvas = sheet.querySelector("canvas");
   const sure = f && follower.status === "following" && !follower.unsure;
   const moves = follower ? follower.moves || 0 : 0;
   let m = -1;
@@ -485,9 +601,30 @@ function drawMarker() {
   } else if (sure) m = f.measure[follower.position]; // sheet music added in Test 7
   movesSeen = moves;
   const box = m >= 0 && f.layout ? f.layout[m] : null;
-  if (!box || box.page !== state.page || !canvas) { marker.hidden = true; return; }
-  placeOnPage(marker, box, canvas);
+  if (box) halfTurnCheck(box);
+  const at = entryFor(box);
+  if (!at) { marker.hidden = true; return; }
+  placeOnPage(marker, box, at.canvas);
   marker.hidden = false;
+}
+
+// Half-page turns while following: once the pianist is in the bottom half of the page, show the next page's top half
+function halfTurnCheck(box) {
+  if (!view.halfTurns || view.half || isTwoUp() || mode !== "follow" || state.page >= state.count) return;
+  const canvas = shown.length && shown[0].page === state.page ? shown[0].canvas : null;
+  const split = canvas ? splitOf(state.page, canvas) : 0.5;
+  if (box.page === state.page && box.y0 >= split - 0.02) show(state.page, { half: true });
+}
+function halfTurnByTime() {
+  if (!view.halfTurns || view.half || isTwoUp() || state.page >= state.count) return;
+  if (follower.status !== "following" || follower.unsure) return;
+  const f = follower.lesson, j = follower.position;
+  if (f.pageAt[j] !== state.page) return;
+  // the stretch of the lesson on this page: halfway through it
+  let a = j, z = j;
+  while (a > f.startOf[j] && f.pageAt[a - 1] === state.page) a--;
+  while (z < f.endOf[j] - 1 && f.pageAt[z + 1] === state.page) z++;
+  if (z < f.endOf[j] - 1 && j - a > (z - a) / 2) show(state.page, { half: true });
 }
 
 /* ---------- Practice: loop a passage, and the report after a session ---------- */
@@ -513,18 +650,19 @@ const playedRangeToMeasures = (l) => { const o = scoreSectionOf().order; return 
 
 // Places an element over a measure box on the page on screen
 function placeOnPage(el, box, canvas) {
-  el.style.left = `${canvas.offsetLeft + box.x0 * canvas.offsetWidth}px`;
-  el.style.top = `${canvas.offsetTop + box.y0 * canvas.offsetHeight}px`;
-  el.style.width = `${(box.x1 - box.x0) * canvas.offsetWidth}px`;
-  el.style.height = `${(box.y1 - box.y0) * canvas.offsetHeight}px`;
+  const r = canvas.getBoundingClientRect(), o = sheet.getBoundingClientRect();
+  el.style.left = `${r.left - o.left + box.x0 * r.width}px`;
+  el.style.top = `${r.top - o.top + box.y0 * r.height}px`;
+  el.style.width = `${(box.x1 - box.x0) * r.width}px`;
+  el.style.height = `${(box.y1 - box.y0) * r.height}px`;
 }
 
 // The loop's bars outlined, and while the report is open, each bar tinted by how often it was played
 function drawOverlay() {
   overlay.textContent = "";
-  const sec = scoreSectionOf(), canvas = sheet.querySelector("canvas");
-  if (!sec || !sec.layout || !canvas) return;
-  const here = (m) => sec.layout[m] && sec.layout[m].page === state.page;
+  const sec = scoreSectionOf();
+  if (!sec || !sec.layout || !shown.length) return;
+  const here = (m) => entryFor(sec.layout[m]);
   if (lastReport && heatOn && !reportPanel.hidden) {
     const most = Math.max(1, ...lastReport.plays.values());
     for (const [m, count] of lastReport.plays) {
@@ -534,7 +672,7 @@ function drawOverlay() {
       el.style.setProperty("--heat", (0.06 + 0.3 * (count / most)).toFixed(2));
       el.dataset.count = `×${count}`;
       if (lastReport.hesitations.get(m)) el.dataset.hesitated = "";
-      placeOnPage(el, sec.layout[m], canvas);
+      placeOnPage(el, sec.layout[m], here(m).canvas);
       overlay.append(el);
     }
   }
@@ -544,7 +682,7 @@ function drawOverlay() {
       if (!here(m)) continue;
       const el = document.createElement("div");
       el.className = "loop-mark";
-      placeOnPage(el, sec.layout[m], canvas);
+      placeOnPage(el, sec.layout[m], here(m).canvas);
       overlay.append(el);
     }
   }
@@ -566,11 +704,16 @@ loopBtn.addEventListener("click", () => {
 });
 
 function pickLoopBar(x, y) {
-  const sec = scoreSectionOf(), canvas = sheet.querySelector("canvas");
-  if (!sec || !canvas) return;
-  const r = canvas.getBoundingClientRect();
-  const fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
-  const m = sec.layout.findIndex((b) => b && b.page === state.page && fx >= b.x0 && fx <= b.x1 && fy >= b.y0 && fy <= b.y1);
+  const sec = scoreSectionOf();
+  if (!sec || !sec.layout) return;
+  let m = -1;
+  for (const e of shown) {
+    const r = e.canvas.getBoundingClientRect();
+    const fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
+    if (fx < 0 || fx > 1 || fy < e.y0 || fy > e.y1) continue;
+    m = sec.layout.findIndex((b) => b && b.page === e.page && fx >= b.x0 && fx <= b.x1 && fy >= b.y0 && fy <= b.y1);
+    if (m >= 0) break;
+  }
   if (m < 0) { toast("Tap inside a bar (turn pages with the arrows or the pedal)", 2200); return; }
   if (loopPick === 1) {
     loopFirst = m;
@@ -603,7 +746,7 @@ function loopFrame(frame, sure) {
     loopState.endReached = false;
     const sec = scoreSectionOf(), box = sec.layout && sec.layout[loop.from];
     const page = box ? box.page : null;
-    if (page && page !== state.page) { show(page); follower.pianistTurned(page); }
+    if (page && !showing(page, box.y0)) { show(page); follower.pianistTurned(page); }
   }
   if (frame.index % FRAME_RATE === 0) {
     const reps = practice.report({ refine: false }).loopReps;
@@ -791,13 +934,14 @@ function tempoChart(run, sec) {
 
 // Briefly highlight a bar (from the report), once its page is on screen
 function flashBar(m, tries = 0) {
-  const sec = scoreSectionOf(), canvas = sheet.querySelector("canvas");
+  const sec = scoreSectionOf();
   const box = sec && sec.layout && sec.layout[m];
   if (!box) return;
-  if (!canvas || box.page !== state.page || !canvas.isConnected) { if (tries < 20) setTimeout(() => flashBar(m, tries + 1), 150); return; }
+  const at = entryFor(box);
+  if (!at || !at.canvas.isConnected) { if (tries < 20) setTimeout(() => flashBar(m, tries + 1), 150); return; }
   const el = document.createElement("div");
   el.className = "flash-mark";
-  placeOnPage(el, box, canvas);
+  placeOnPage(el, box, at.canvas);
   overlay.append(el);
   setTimeout(() => el.remove(), 1600);
 }
@@ -938,10 +1082,10 @@ function drawReplay() {
   let page = R.firstPage;
   for (const turn of R.turns) if (turn.time <= at) page = turn.page;
   if (m >= 0 && sec.layout[m]) page = sec.layout[m].page;
-  if (page !== state.page) show(page);
-  const canvas = sheet.querySelector("canvas");
+  if (!showing(page, 0.5) && !(page === state.page)) show(page);
   const box = m >= 0 && sec.layout[m];
-  if (box && canvas && box.page === state.page) { placeOnPage(marker, box, canvas); marker.hidden = false; } else marker.hidden = true;
+  const where = box ? entryFor(box) : null;
+  if (where) { placeOnPage(marker, box, where.canvas); marker.hidden = false; } else marker.hidden = true;
   rpSeek.value = String(t);
   rpTime.textContent = `${clock(t)} / ${clock(R.duration)}`;
   rpPlay.textContent = r.playing ? "Pause" : "Play";
@@ -1106,6 +1250,200 @@ followBtn.addEventListener("click", () => {
   backToMusic();
 });
 
+/* ---------- Library and setlists ---------- */
+const library = new LibraryUI($("library"), {
+  onOpen: (key) => { setlist = null; showSetlistChip(); openFromLibrary(key); },
+  onAdd: () => fileInput.click(),
+  onPlay: (list, index) => playSetlist(list, index),
+});
+
+// A small picture of page 1, for the library
+async function thumbnailOf() {
+  try {
+    const page = await state.pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: 160 / base.width });
+    const c = document.createElement("canvas");
+    c.width = Math.round(vp.width);
+    c.height = Math.round(vp.height);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    const url = c.toDataURL("image/jpeg", 0.7);
+    c.width = c.height = 0;
+    return url;
+  } catch { return null; }
+}
+
+// Keep the PDF just opened in the library
+async function rememberPiece(name, bytes) {
+  const key = state.key;
+  if (!key) return;
+  const old = await loadMeta(key);
+  const meta = {
+    key, name: old ? old.name : name.replace(/\.pdf$/i, ""), pages: state.count,
+    added: old ? old.added : Date.now(), opened: Date.now(), thumb: (old && old.thumb) || (await thumbnailOf()),
+  };
+  savePiece(key, name, bytes, meta).catch(() => toast("Couldn't keep this PDF in the library (the iPad may be out of space).", 3500));
+}
+
+async function openFromLibrary(key) {
+  const piece = await loadPiece(key);
+  if (!piece) { toast("That piece isn't on this iPad any more.", 2500); return false; }
+  const ok = await openPdf(piece.bytes.slice(), piece.name);
+  if (ok) {
+    saveLastFile(piece.name, piece.bytes).catch(() => {});
+    const meta = await loadMeta(key);
+    if (meta) {
+      meta.opened = Date.now();
+      putMeta(meta).catch(() => {});
+      fileName.textContent = meta.name;
+    }
+  }
+  return ok;
+}
+
+async function playSetlist(list, index) {
+  setlist = { list, index };
+  const ok = await openFromLibrary(list.items[index]);
+  if (!ok) setlist = null;
+  showSetlistChip();
+}
+
+// The pedal at the end (or start) of a piece in a setlist goes on to the next (or previous) piece. If Follow was on,
+// it carries on with the next piece. Returns false when not playing a setlist.
+function setlistStep(dir) {
+  if (!setlist) return false;
+  const i = setlist.index + dir;
+  if (i < 0) { toast("First piece of the setlist"); return true; }
+  if (i >= setlist.list.items.length) { toast("End of the setlist"); return true; }
+  const wasFollowing = mode === "follow";
+  setlist.index = i;
+  openFromLibrary(setlist.list.items[i]).then((ok) => {
+    showSetlistChip();
+    if (!ok) return;
+    if (dir < 0) show(state.count);
+    toast(`${setlist.index + 1} of ${setlist.list.items.length}: ${fileName.textContent}`, 2000);
+    if (wasFollowing && state.lesson) startFollow();
+  });
+  return true;
+}
+
+function showSetlistChip() {
+  const chip = $("setlistChip");
+  chip.hidden = !setlist;
+  document.body.classList.toggle("in-setlist", !!setlist);
+  if (setlist) {
+    $("setlistText").textContent = `${setlist.list.name} · ${setlist.index + 1}/${setlist.list.items.length}`;
+    const next = setlist.list.items[setlist.index + 1];
+    chip.title = next ? `Next: ${library.name(next)}` : "Last piece";
+  }
+  updateCounter();
+}
+$("setlistEnd").addEventListener("click", () => { setlist = null; showSetlistChip(); toast("Setlist ended", 1200); backToMusic(); });
+
+/* ---------- Pencil markings: the Mark toolbar ---------- */
+marks.attach(sheet);
+const markBar = $("markBar"), markBtn = $("markBtn");
+function setMarkMode(on) {
+  marks.markMode = on;
+  markBar.hidden = !on;
+  markBtn.setAttribute("aria-pressed", String(on));
+  if (on) { setCard(false); toast(marks.count() ? "Mark: draw with the Pencil or a finger" : "Mark: draw with the Pencil or a finger. (The Pencil also draws when Mark is off.)", 2500); }
+}
+markBtn.addEventListener("click", () => { setMarkMode(!marks.markMode); backToMusic(); });
+function pickTool(kind, color) {
+  marks.tool = { kind, color: color || INKS.black };
+  for (const b of markBar.querySelectorAll("[data-tool]")) {
+    const on = b.dataset.tool === kind && (!b.dataset.color || INKS[b.dataset.color] === marks.tool.color);
+    b.setAttribute("aria-pressed", String(on));
+  }
+  $("digitRow").hidden = kind !== "finger";
+}
+for (const b of markBar.querySelectorAll("[data-tool]")) b.addEventListener("click", () => pickTool(b.dataset.tool, b.dataset.color && INKS[b.dataset.color]));
+for (const b of $("digitRow").querySelectorAll("button")) b.addEventListener("click", () => {
+  marks.digit = b.textContent;
+  for (const x of $("digitRow").querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+});
+$("markUndo").addEventListener("click", () => { if (!marks.undo()) toast("Nothing to undo", 1000); });
+$("markClear").addEventListener("click", (e) => {
+  const b = e.currentTarget;
+  if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Clear page"; }, 3000); return; }
+  b.dataset.armed = "";
+  b.textContent = "Clear page";
+  const pages = shown.map((x) => x.page);
+  let any = false;
+  for (const pg of pages) any = marks.clearPage(pg) || any;
+  toast(any ? "Cleared (Undo brings it back)" : "No markings here", 1500);
+});
+$("markDone").addEventListener("click", () => { setMarkMode(false); backToMusic(); });
+pickTool("pen", INKS.black);
+
+/* ---------- View: two pages, half-page turns, and the performance lock ---------- */
+const viewMenu = $("viewMenu");
+$("viewBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  viewMenu.hidden = !viewMenu.hidden;
+  $("viewBtn").setAttribute("aria-expanded", String(!viewMenu.hidden));
+  $("twoUpToggle").checked = view.twoUp;
+  $("halfToggle").checked = view.halfTurns;
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!viewMenu.hidden && !viewMenu.contains(e.target) && e.target !== $("viewBtn")) { viewMenu.hidden = true; $("viewBtn").setAttribute("aria-expanded", "false"); }
+});
+$("twoUpToggle").addEventListener("change", (e) => {
+  view.twoUp = e.target.checked;
+  saveView();
+  state.layout = layoutKey();
+  if (view.twoUp && !isTwoUp()) toast("Two pages show when the iPad is sideways", 2200);
+  show(state.page);
+});
+$("halfToggle").addEventListener("change", (e) => {
+  view.halfTurns = e.target.checked;
+  saveView();
+  if (!view.halfTurns && view.half) show(state.page);
+  if (view.halfTurns && isTwoUp()) toast("Half-page turns work when one page shows", 2200);
+});
+
+function setLocked(on) {
+  locked = on;
+  document.body.classList.toggle("locked", on);
+  $("unlockBtn").hidden = !on;
+  if (on) {
+    viewMenu.hidden = true;
+    setCard(false);
+    library.close();
+    setMarkMode(false);
+    if (!reportPanel.hidden) setReport(false);
+    toast("Locked: only the pedal turns pages. Hold the lock button to unlock.", 2600);
+  } else toast("Unlocked", 1000);
+  backToMusic();
+}
+$("lockBtn").addEventListener("click", () => setLocked(true));
+{
+  // unlocking takes a press of about a second, so a stray touch can't do it
+  const btn = $("unlockBtn");
+  let timer = 0;
+  const cancel = () => { clearTimeout(timer); btn.classList.remove("holding"); };
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    btn.classList.add("holding");
+    timer = setTimeout(() => { cancel(); setLocked(false); }, 900);
+  });
+  btn.addEventListener("pointerup", cancel);
+  btn.addEventListener("pointercancel", cancel);
+  btn.addEventListener("pointerleave", cancel);
+}
+
+/* ---------- Offline: the app keeps itself on the iPad (see sw.js) ---------- */
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(async () => {
+    const keys = await caches.keys();
+    if (keys.some((k) => k.startsWith("page-turner"))) $("offlineNote").hidden = false;
+  }).catch(() => {});
+}
+
 /* ---------- Microphone check and note display ---------- */
 const hearing = new Hearing();
 const earKeys = $("earKeys"), earHeard = $("earHeard"), earLevel = $("earLevel"), earNote = $("earNote");
@@ -1214,7 +1552,8 @@ window.addEventListener("keydown", (e) => {
 /* ---------- Taps and swipes ---------- */
 let down = null;
 stand.addEventListener("pointerdown", (e) => {
-  if (e.button > 0) return;
+  if (e.button > 0 || locked) return;
+  if (e.target.closest && e.target.closest("button, input, label, .markbar, .replaybar, .unlock, .modebar")) { down = null; return; } // controls over the music
   down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
   stand.focus({ preventScroll: true });
   keepAwake();
@@ -1236,7 +1575,7 @@ stand.addEventListener("pointercancel", () => { down = null; });
 function backToMusic() { stand.focus({ preventScroll: true }); }
 $("prevBtn").addEventListener("click", () => { turn(-1); backToMusic(); });
 $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
-$("openBtn").addEventListener("click", () => { fileInput.click(); });
+$("libraryBtn").addEventListener("click", () => { library.open(); });
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files && fileInput.files[0];
   fileInput.value = "";
@@ -1250,7 +1589,10 @@ fileInput.addEventListener("change", async () => {
     return;
   }
   const copy = data.slice(); // the PDF reader takes over `data`, so keep our own copy to save
-  if (await openPdf(data, file.name)) saveLastFile(file.name, copy).catch(() => {});
+  if (await openPdf(data, file.name)) {
+    saveLastFile(file.name, copy).catch(() => {});
+    rememberPiece(file.name, copy);
+  }
 });
 function setCard(open) {
   card.hidden = !open;
@@ -1278,7 +1620,13 @@ updateButtons();
 clearEar();
 (async () => {
   const last = await loadLastFile();
-  if (openToken === 0 && last && (await openPdf(last.bytes, last.name))) return;
+  if (openToken === 0 && last && (await openPdf(last.bytes.slice(), last.name))) {
+    // the piece left open (from before there was a library) goes into the library too
+    const meta = await loadMeta(state.key);
+    if (meta) fileName.textContent = meta.name;
+    else rememberPiece(last.name, last.bytes);
+    return;
+  }
   const before = openToken; // if the pianist opens a file meanwhile, leave it alone
   try {
     const res = await fetch(SAMPLE.url);

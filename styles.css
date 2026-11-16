@@ -250,3 +250,76 @@ body {
 .report-buttons { display: flex; gap: 8px; }
 .listen-btn { font: inherit; font-size: 13px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--rail); color: var(--ink); cursor: pointer; }
 .listen-btn[hidden] { display: none; }
+
+/* Pages: each one with its Pencil layer; two side by side; half-page view */
+.page { position: relative; flex: none; touch-action: none; -webkit-touch-callout: none; }
+.page canvas.marks { position: absolute; inset: 0; box-shadow: none; background: transparent; pointer-events: none; }
+.sheet.two-up { gap: 12px; }
+.half-stack { display: flex; flex-direction: column; box-shadow: var(--page-shadow); }
+.half-stack .half { overflow: hidden; position: relative; }
+.half-stack .half + .half { border-top: 2px dashed var(--line); }
+.half-stack canvas { box-shadow: none; }
+
+/* Mark toolbar */
+.markbar {
+  position: absolute; z-index: 5; left: 50%; top: 10px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;
+  width: max-content; max-width: calc(100% - 24px); padding: 8px 10px;
+  background: var(--rail); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+}
+.markbar .ink i { display: block; width: 16px; height: 16px; border-radius: 50%; }
+.digit-row { display: flex; gap: 4px; }
+
+/* View menu, lock, setlist chip */
+.view-wrap { position: relative; }
+.view-menu {
+  position: absolute; z-index: 20; right: 0; top: calc(100% + 6px); width: 300px;
+  display: grid; gap: 10px; padding: 14px;
+  background: var(--rail); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  font-size: 15px;
+}
+.view-menu label { display: flex; gap: 10px; align-items: flex-start; }
+.view-menu input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--brass); }
+.view-menu .note { margin: 0; color: var(--muted); font-size: 13px; }
+.unlock {
+  position: absolute; z-index: 8; top: 10px; right: 12px;
+  font: 700 14px var(--font-ui); color: var(--ink); background: var(--rail);
+  border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; min-height: 40px;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.unlock.holding { background: var(--brass-wash); border-color: var(--brass); transition: background .9s; }
+body.locked .rail .controls > *:not(.counter) { visibility: hidden; }
+body.locked .rail .counter button { visibility: hidden; }
+.setlist-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--brass); background: var(--brass-wash); border-radius: 999px; padding: 2px 4px 2px 10px; white-space: nowrap; }
+.chip-x { font: inherit; border: 0; background: transparent; color: inherit; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; }
+.offline-note { font-size: 14px; color: var(--ok); }
+
+/* Library */
+.card.library {
+  z-index: 7; left: 50%; right: auto; top: 70px; bottom: auto; transform: translateX(-50%);
+  width: min(720px, calc(100vw - 32px)); max-height: calc(100% - 100px);
+}
+.lib-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lib-buttons, .lib-tabs, .lib-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lib-search, .lib-setname { font: inherit; font-size: 16px; color: var(--ink); background: var(--stand); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.lib-setname { flex: 1 1 200px; width: auto; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.lib-piece { display: grid; grid-template-columns: 56px 1fr; gap: 6px 10px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--stand); cursor: pointer; }
+.lib-piece:focus-visible { outline: 2px solid var(--brass); }
+.lib-thumb { grid-row: span 2; width: 56px; height: 72px; background: #fff; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); }
+.lib-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.lib-info { display: grid; gap: 2px; min-width: 0; }
+.lib-name { font-weight: 700; overflow-wrap: anywhere; }
+.lib-meta { font-size: 13px; color: var(--muted); }
+.lib-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.lib-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lib-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--stand); }
+.lib-order { list-style: decimal inside; }
+.library h3 { margin: 6px 0 0; font-size: 15px; }
+.lib-delete { justify-self: start; color: var(--rec); }
+/* while a setlist plays, its label takes the place of the app name and file name */
+body.in-setlist .ident .mark, body.in-setlist .ident .file { display: none; }
+.ident { overflow: hidden; }
+.setlist-chip { min-width: 0; }
+#setlistText { overflow: hidden; text-overflow: ellipsis; }
+.chip-x { flex: none; }

@@ -6,7 +6,26 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 10 (current):** record and replay (roadmap step 9) and a "music starts on page" option. Follow records the
+- **Test 11 (current):** Phase C everyday essentials (roadmap steps 10–13), built at the owner's request without
+  waiting for Test 10 feedback (they'll send it with a recording). **Library** (`library.js`, storage in `store.js`:
+  `piece|<key>` bytes, `meta|<key>` { name, pages, added, opened, thumb }, `setlists`): every PDF opened is kept (also
+  the one left open from before); open, rename, remove (also its lesson, markings, practice history); "Add a PDF";
+  replaces the Open PDF button. **Setlists**: make, add pieces, reorder, play; the pedal past a piece's last page opens
+  the next (back before page 1: the previous, at its end), Follow carries on (the pedal press allows the microphone);
+  a chip in the top bar (app and file name hidden meanwhile). **Pencil** (`marks.js`): the Pencil draws any time;
+  ✎ opens the Mark toolbar (black/red/blue pen with pressure, highlighter, fingering 1–5, eraser removing whole
+  strokes, Undo, Clear page) and lets a finger draw; touches within 0.6 s of the Pencil are ignored (palm); strokes in
+  page fractions, saved as `<key>|marks`. **View** menu: two pages side by side when sideways (pairs 1–2, 3–4; turns
+  by two), half-page turns (the next page's top over this page's bottom, split at the blank gap between systems
+  nearest the middle; forward goes half then full; while following, half when the highlight reaches the bottom half,
+  or halfway through the page's stretch of a taught lesson), and Lock for performing (taps and Pencil do nothing,
+  controls hidden, the pedal still works, hold the lock button ~1 s to unlock). Pages are drawn as `.page` units
+  (PDF canvas + markings canvas); `shown` lists what is on screen and which part of each page, and highlights,
+  loops and practice tints are placed through `entryFor`. Controls over the music no longer count as page taps
+  (a tap on the Mark toolbar used to turn the page). **Offline** (`sw.js`): keeps the app's files (network first
+  with a 4 s fallback to the kept copy, so updates show at once online; vendor files and fonts kept as they are);
+  `manifest.webmanifest` and icons for Add to Home Screen; a "works without Wi-Fi" line in the card.
+- **Test 10:** record and replay (roadmap step 9) and a "music starts on page" option. Follow records the
   microphone (`engine/recorder.js`: 16 kHz, 16-bit, on the engine's clock, up to 30 minutes, in memory only); after
   Stop, "▶ Listen back" (practice report or steps card) plays the last session with the highlight (from the
   PracticeLog's positions) and the pages (from the highlight, else the session's turn log) following; −5 s / +5 s,
@@ -115,7 +134,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
 8. **Tempo graph:** tempo bar by bar after a run-through.
 9. **Record and replay:** play back a practice run with the measure highlight following along.
 
-### Phase C: Everyday essentials and getting ready to release
+### Phase C: Everyday essentials and getting ready to release — steps 10–13 built in Test 11
 
 10. **Library and setlists.**
 11. **Annotations with Apple Pencil:** fingerings and markings.
@@ -190,7 +209,9 @@ Steps are numbered across phases, in order. Work through them in that order unle
     system's count chosen by dynamic programming over barline clarity plus a share-by-width prior.
   - `hearing.js`: the "Hearing" note display.
 - `audio/capture-worklet.js` (audio thread) → `listen.js` (`Microphone`) → `FeatureExtractor`.
-- `store.js`: IndexedDB on the device: lessons keyed by PDF fingerprint plus page count, and the last opened PDF.
+- `store.js`: IndexedDB on the device: lessons keyed by PDF fingerprint plus page count (also `<key>|marks`,
+  `<key>|practice`), the last opened PDF, the library and setlists.
+- `library.js`: the library panel (pieces and setlists). `marks.js`: Pencil markings. `sw.js`: offline.
 - `app.js`: viewer, pedal, taps, Teach and Follow, test card. `window.pageTurner` exposes the audio clock and a
   log of page turns for tests and troubleshooting.
 - `vendor/pdfjs/`: pdfjs-dist 4.10.38, *legacy* build so older iPadOS Safari works. Apache-2.0.
@@ -244,6 +265,9 @@ Steps are numbered across phases, in order. Work through them in that order unle
     `aba_dc.mxl`, no teaching: turns to page 2 and back for the D.C., measure highlight shown, then bar numbers typed,
     applied and kept after a reload; also the practice report (dragging it), listening back (plays, highlight follows,
     seeking to 50 s shows page 2) and picking a loop.
+  - `NODE_PATH="$(npm root -g)" node tests/phasec.cjs`: library, setlists (pedal to the next and previous piece),
+    Pencil (a synthetic pen, a palm touch ignored, Mark mode, highlighter, Undo, fingering, kept after reload),
+    half-page and two-page views, the lock, and offline (service worker, reload offline, open from the library).
   - `python3 tools/synth_performances.py tests/output/short --short` then
     `NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs`: real-browser Teach, Follow and Practice with a fake
     microphone (about 2.5 minutes).

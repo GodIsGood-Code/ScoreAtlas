@@ -43,3 +43,18 @@ export function keepData() {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   } catch {}
 }
+
+// The library: every PDF opened is kept (its bytes under "piece|<key>", a small description under "meta|<key>":
+// { key, name, pages, added, opened, thumb }), and the setlists (a list of { id, name, items: [key, ...] })
+export const savePiece = (key, name, bytes, meta) => run("files", "readwrite", (s) => { s.put({ name, bytes }, `piece|${key}`); return s.put(meta, `meta|${key}`); });
+export const loadPiece = (key) => run("files", "readonly", (s) => s.get(`piece|${key}`)).catch(() => null);
+export const loadMeta = (key) => run("files", "readonly", (s) => s.get(`meta|${key}`)).catch(() => null);
+export const putMeta = (meta) => run("files", "readwrite", (s) => s.put(meta, `meta|${meta.key}`));
+export const listMeta = () => run("files", "readonly", (s) => s.getAll(IDBKeyRange.bound("meta|", "meta|￿"))).catch(() => []);
+export async function removePiece(key) {
+  await run("files", "readwrite", (s) => { s.delete(`piece|${key}`); return s.delete(`meta|${key}`); });
+  // and what the app learned about it: the lesson, Pencil markings, practice history
+  await run("lessons", "readwrite", (s) => { s.delete(key); s.delete(`${key}|marks`); return s.delete(`${key}|practice`); }).catch(() => {});
+}
+export const loadSetlists = () => run("files", "readonly", (s) => s.get("setlists")).then((x) => x || []).catch(() => []);
+export const saveSetlists = (lists) => run("files", "readwrite", (s) => s.put(lists, "setlists"));

@@ -11,6 +11,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#f6f7f9">
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -18,17 +21,28 @@
     <header class="rail">
       <div class="ident">
         <span class="mark">Page Turner</span>
-        <span class="tag">Test 10</span>
+        <span class="tag">Test 11</span>
         <span class="file" id="fileName">Loading…</span>
+        <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist">✕</button></span>
       </div>
       <div class="controls">
-        <button id="openBtn" class="btn" type="button">Open PDF</button>
+        <button id="libraryBtn" class="btn" type="button">Library</button>
         <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
         <div class="counter">
           <button id="prevBtn" class="btn icon" type="button" aria-label="Previous page">‹</button>
           <output id="pageNum" aria-live="polite">– / –</output>
           <button id="nextBtn" class="btn icon" type="button" aria-label="Next page">›</button>
         </div>
+        <button id="markBtn" class="btn icon" type="button" aria-pressed="false" aria-label="Mark the music (Apple Pencil)" title="Mark">✎</button>
+        <span class="view-wrap">
+          <button id="viewBtn" class="btn" type="button" aria-expanded="false" aria-controls="viewMenu">View</button>
+          <div class="view-menu" id="viewMenu" hidden>
+            <label><input id="twoUpToggle" type="checkbox"> Two pages side by side when the iPad is sideways</label>
+            <label><input id="halfToggle" type="checkbox"> Half-page turns (the next page's top half shows while you play the bottom of this one)</label>
+            <button id="lockBtn" class="btn small" type="button">Lock for performing</button>
+            <p class="note">Locked, only the pedal turns pages: taps and the Pencil do nothing.</p>
+          </div>
+        </span>
         <button id="loopBtn" class="btn mode" type="button" aria-pressed="false" hidden>Loop</button>
         <button id="teachBtn" class="btn mode" type="button" aria-pressed="false">Teach</button>
         <button id="followBtn" class="btn mode primary" type="button" aria-pressed="false">Follow</button>
@@ -47,10 +61,39 @@
         <span id="rpTime" class="rp-time">0:00 / 0:00</span>
         <button id="rpClose" class="btn small" type="button">Done</button>
       </div>
+      <div class="markbar" id="markBar" hidden role="toolbar" aria-label="Markings">
+        <button class="btn small ink" type="button" data-tool="pen" data-color="black" aria-label="Black pen"><i style="background:#1a1d21"></i></button>
+        <button class="btn small ink" type="button" data-tool="pen" data-color="red" aria-label="Red pen"><i style="background:#c62828"></i></button>
+        <button class="btn small ink" type="button" data-tool="pen" data-color="blue" aria-label="Blue pen"><i style="background:#1f5fc4"></i></button>
+        <button class="btn small" type="button" data-tool="highlight">Highlight</button>
+        <button class="btn small" type="button" data-tool="finger">1–5</button>
+        <button class="btn small" type="button" data-tool="erase">Eraser</button>
+        <span class="digit-row" id="digitRow" hidden><button class="btn small" type="button" aria-pressed="true">1</button><button class="btn small" type="button">2</button><button class="btn small" type="button">3</button><button class="btn small" type="button">4</button><button class="btn small" type="button">5</button></span>
+        <button id="markUndo" class="btn small" type="button">Undo</button>
+        <button id="markClear" class="btn small" type="button">Clear page</button>
+        <button id="markDone" class="btn small" type="button">Done</button>
+      </div>
+      <button id="unlockBtn" class="unlock" type="button" hidden aria-label="Hold to unlock">🔒 Hold to unlock</button>
       <div class="sheet" id="sheet"></div>
       <div class="status" id="status" hidden><span id="statusText"></span></div>
       <div class="toast" id="toast" hidden></div>
     </main>
+
+    <aside class="card library" id="library" aria-label="Library" hidden>
+      <div class="lib-head">
+        <h2>Library</h2>
+        <span class="lib-buttons">
+          <button class="btn small lib-add" type="button">Add a PDF</button>
+          <button class="btn small lib-close" type="button">Close</button>
+        </span>
+      </div>
+      <div class="lib-tabs" role="group" aria-label="Show">
+        <button class="btn small lib-tab" type="button" data-tab="pieces" aria-pressed="true">Pieces</button>
+        <button class="btn small lib-tab" type="button" data-tab="setlists" aria-pressed="false">Setlists</button>
+      </div>
+      <input class="lib-search" type="text" placeholder="Find a piece" aria-label="Find a piece" autocomplete="off">
+      <div class="lib-body"></div>
+    </aside>
 
     <aside class="card report" id="report" aria-label="Practice report" hidden>
       <div class="report-head">
@@ -65,12 +108,13 @@
     </aside>
 
     <aside class="card" id="card" aria-label="Test steps">
-      <h2>Test 10: listen back, movements, steadier refrains</h2>
+      <h2>Test 11: library, setlists, Pencil, display, offline</h2>
       <ol>
-        <li><b>Listen back:</b> after practising with Follow, tap <b>Stop</b>, then <b>▶ Listen back</b> in the practice report. Your playing plays back while the highlight and the pages follow along. Use −5 s, +5 s and the slider to move around. The <b>▶</b> next to a bar in the report plays that moment.</li>
-        <li><b>Movements:</b> for a piece with several movements in one PDF, add one movement's sheet music, type the page it starts on under <b>Sheet music options</b>, and tap <b>Apply</b>.</li>
-        <li><b>Fixes:</b> a page never turns before the last bar of the page has started; the app picks you up again faster after a hesitation; a repeated passage on the page you're on is preferred over the same music on another page.</li>
-        <li><b>Move a panel</b> out of the way by dragging its title (the small bar at the top).</li>
+        <li><b>Library:</b> every PDF you open is kept there. Tap <b>Library</b> to open a piece, rename it or remove it. <b>Add a PDF</b> is there too.</li>
+        <li><b>Setlists:</b> in the Library, tap <b>Setlists</b>, <b>New setlist</b>, name it, add pieces and put them in order, then <b>Play</b>. On a piece's last page, the forward pedal opens the next piece (and Follow carries on if it was on).</li>
+        <li><b>Apple Pencil:</b> just write on the music. Tap <b>✎</b> for colours, the highlighter, fingering numbers (1–5), the eraser and Undo; while ✎ is on, a finger draws too. Markings are saved with the piece.</li>
+        <li><b>View:</b> two pages side by side when the iPad is sideways, half-page turns, and <b>Lock for performing</b> (only the pedal turns pages; hold the lock button to unlock).</li>
+        <li><b>Offline:</b> once loaded, the app works without Wi-Fi. For an app icon: Share, then <b>Add to Home Screen</b>.</li>
       </ol>
       <div class="lesson-row">
         <p class="lesson" id="lessonInfo"></p>
@@ -98,6 +142,7 @@
         <div class="actions"><button id="applyBtn" class="btn small" type="button">Apply</button></div>
       </section>
       <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
+      <p class="offline-note" id="offlineNote" hidden>✓ Saved on this iPad: works without Wi-Fi. For an app icon, tap Share, then Add to Home Screen.</p>
 
       <section class="ear" aria-label="Notes the app hears">
         <div class="ear-head">
