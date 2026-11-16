@@ -7,7 +7,18 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 12 (current):** a design pass at the owner's request ("make it look and feel as good as possible", full
+- **Test 13 (current):** release groundwork. `release/` holds the App Store listing (`app-store.md`: name, subtitle,
+  description, promotional text, keywords, category, age rating, microphone permission text, App Privacy answers
+  "Data Not Collected", reviewer notes, screenshot plan; lengths checked) and a release checklist (`release/README.md`).
+  `privacy.html` and `support.html` (styled by `doc.css`) are the policy and support URLs on the live site; contact
+  is the GitHub issues page (no personal email published). The app will launch free (owner). In the app: **Settings**
+  (View menu or the Piece panel): turn pages earlier/later (`turnShift`, −1 to +1 s, applied through
+  `followSettings()` to `anticipation`/`scoreLead` at the next Follow), bar highlight, tap/swipe to turn, keep the
+  screen on, appearance Automatic/Light/Dark (`data-theme` on `<html>`, dark tokens also under
+  `:root[data-theme="dark"]`); kept in localStorage `pt-settings`. **Help** panel (guide plus troubleshooting).
+  **Welcome tour** (6 steps) on first launch (`pt-welcomed`; skipped when `navigator.webdriver`, i.e. in tests;
+  `pageTurner.showTour()`), again from Settings or Help.
+- **Test 12:** a design pass at the owner's request ("make it look and feel as good as possible", full
   liberty) plus the name ScoreAtlas. Warm paper-and-ink palette with one brass accent (tokens on `:root`, dark mode
   redefined), Fraunces for titles, inline SVG icons (a `<symbol>` sprite in index.html). Top bar: the piece's name is
   the Library button; a page pill in the middle; Mark, View, Loop with labels (icons only under 760 px), Follow as the
@@ -148,7 +159,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
 8. **Tempo graph:** tempo bar by bar after a run-through.
 9. **Record and replay:** play back a practice run with the measure highlight following along.
 
-### Phase C: Everyday essentials and getting ready to release — steps 10–13 built in Test 11
+### Phase C: Everyday essentials and getting ready to release — steps 10–13 built in Test 11; release groundwork in Test 13
 
 10. **Library and setlists.**
 11. **Annotations with Apple Pencil:** fingerings and markings.

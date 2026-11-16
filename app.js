@@ -5,7 +5,7 @@
 import { Microphone } from "./listen.js";
 import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
-import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
+import { makeLesson, addSection, sectionsOf, Follower, FOLLOW_SETTINGS } from "./engine/follower.js";
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData, savePiece, loadPiece, loadMeta, putMeta } from "./store.js";
 import { Marks, INKS } from "./marks.js";
 import { LibraryUI } from "./library.js";
@@ -52,6 +52,21 @@ const marks = new Marks({
   enabled: () => !locked && mode !== "replay",
 });
 let setlist = null; // { list: { id, name, items }, index } while playing a setlist
+
+// Settings (kept on this iPad)
+const settings = { turnShift: 0, highlight: true, tapTurns: true, awake: true, theme: "auto" };
+try { Object.assign(settings, JSON.parse(localStorage.getItem("pt-settings") || "{}")); } catch {}
+const saveSettings = () => { try { localStorage.setItem("pt-settings", JSON.stringify(settings)); } catch {} };
+function applyTheme() {
+  if (settings.theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = settings.theme;
+}
+applyTheme();
+// The follower's settings with the pianist's page-turn timing (seconds earlier, negative for later)
+function followSettings() {
+  const shift = settings.turnShift || 0, base = FOLLOW_SETTINGS.anticipation;
+  return { ...FOLLOW_SETTINGS, anticipation: Math.max(0, base + shift), scoreLead: Math.max(0, FOLLOW_SETTINGS.scoreLead + Math.min(0, base + shift)) };
+}
 let teach = null; // { frames, turns } while teaching
 let follower = null;
 let micCheck = false;
@@ -393,6 +408,7 @@ async function startFollow() {
   // Start from the page on screen: the pianist may begin anywhere, and the page is a hint where
   follower = new Follower(state.lesson, {
     page: state.page,
+    settings: followSettings(),
     onTurn: (page, why) => {
       show(page);
       turnLog.push({ page, time: lastFrameTime, how: why === "jump" ? "jump" : "auto" });
@@ -444,6 +460,8 @@ window.pageTurner = {
   layoutOnPage: () => { const sec = scoreSectionOf(); return sec && sec.layout ? sec.layout.filter((b) => b && b.page === state.page) : []; },
   get view() { return { ...view, twoUp: isTwoUp(), shown: shown.map((e) => e.page) }; },
   get locked() { return locked; },
+  showTour: () => showTour(),
+  get settings() { return { ...settings }; },
   get setlist() { return setlist ? { name: setlist.list.name, index: setlist.index, count: setlist.list.items.length } : null; },
   marks: () => marks.data(),
 };
@@ -608,7 +626,7 @@ function drawMarker() {
   const box = m >= 0 && f.layout ? f.layout[m] : null;
   if (box) halfTurnCheck(box);
   const at = entryFor(box);
-  if (!at) { marker.hidden = true; return; }
+  if (!at || !settings.highlight) { marker.hidden = true; return; }
   placeOnPage(marker, box, at.canvas);
   marker.hidden = false;
 }
@@ -1448,6 +1466,80 @@ $("lockBtn").addEventListener("click", () => setLocked(true));
   btn.addEventListener("pointerleave", cancel);
 }
 
+/* ---------- Settings and Help ---------- */
+function openPanel(id) {
+  closePanels(id);
+  $(id).hidden = false;
+  if (id === "settingsPanel") showSettings();
+}
+for (const b of document.querySelectorAll(".panel-close")) b.addEventListener("click", () => { b.closest(".panel").hidden = true; backToMusic(); });
+$("openSettings").addEventListener("click", () => openPanel("settingsPanel"));
+$("openHelp").addEventListener("click", () => openPanel("helpPanel"));
+$("cardSettings").addEventListener("click", () => openPanel("settingsPanel"));
+$("cardHelp").addEventListener("click", () => openPanel("helpPanel"));
+makeMovable($("settingsPanel"), $("settingsPanel").querySelector(".panel-head"), "pt-settings-place");
+makeMovable($("helpPanel"), $("helpPanel").querySelector(".panel-head"), "pt-help-place");
+
+const shiftText = (v) => (Math.abs(v) < 0.01 ? "as now" : `${Math.abs(v)} s ${v > 0 ? "earlier" : "later"}`);
+function showSettings() {
+  $("turnShift").value = String(settings.turnShift);
+  $("turnShiftText").textContent = shiftText(settings.turnShift);
+  $("setTap").checked = settings.tapTurns;
+  $("setHighlight").checked = settings.highlight;
+  $("setAwake").checked = settings.awake;
+  for (const b of $("themeChoice").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.theme === settings.theme));
+}
+$("turnShift").addEventListener("input", (e) => {
+  settings.turnShift = Number(e.target.value);
+  $("turnShiftText").textContent = shiftText(settings.turnShift);
+  saveSettings();
+  if (mode === "follow") toast("Takes effect the next time you tap Follow", 1800);
+});
+$("setTap").addEventListener("change", (e) => { settings.tapTurns = e.target.checked; saveSettings(); });
+$("setHighlight").addEventListener("change", (e) => { settings.highlight = e.target.checked; saveSettings(); if (!settings.highlight) marker.hidden = true; });
+$("setAwake").addEventListener("change", (e) => {
+  settings.awake = e.target.checked;
+  saveSettings();
+  if (settings.awake) keepAwake();
+  else if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+});
+for (const b of $("themeChoice").querySelectorAll("button")) b.addEventListener("click", () => {
+  settings.theme = b.dataset.theme;
+  saveSettings();
+  applyTheme();
+  showSettings();
+});
+
+/* ---------- The welcome tour (first launch, and from Settings or Help) ---------- */
+const tourSteps = [...document.querySelectorAll(".tour-step")];
+let tourAt = 0;
+function drawTour() {
+  tourSteps.forEach((s, i) => { s.hidden = i !== tourAt; });
+  $("tourDots").innerHTML = tourSteps.map((_, i) => `<i class="${i === tourAt ? "on" : ""}"></i>`).join("");
+  $("tourBack").hidden = tourAt === 0;
+  $("tourNext").textContent = tourAt === tourSteps.length - 1 ? "Get started" : "Next";
+  $("tourSkip").hidden = tourAt === tourSteps.length - 1;
+}
+function showTour() {
+  closePanels();
+  tourAt = 0;
+  drawTour();
+  $("tour").hidden = false;
+  $("tourNext").focus();
+}
+function endTour() {
+  $("tour").hidden = true;
+  try { localStorage.setItem("pt-welcomed", "1"); } catch {}
+  backToMusic();
+}
+$("tourNext").addEventListener("click", () => { if (tourAt < tourSteps.length - 1) { tourAt++; drawTour(); } else endTour(); });
+$("tourBack").addEventListener("click", () => { if (tourAt > 0) { tourAt--; drawTour(); } });
+$("tourSkip").addEventListener("click", endTour);
+$("tourAgain").addEventListener("click", showTour);
+$("helpTour").addEventListener("click", showTour);
+// first launch (automated tests skip it)
+try { if (!localStorage.getItem("pt-welcomed") && !navigator.webdriver) setTimeout(showTour, 400); } catch {}
+
 /* ---------- Offline: the app keeps itself on the iPad (see sw.js) ---------- */
 if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
   navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(async () => {
@@ -1574,6 +1666,7 @@ stand.addEventListener("pointerup", (e) => {
   if (!down || e.pointerId !== down.id) return;
   const dx = e.clientX - down.x, dy = e.clientY - down.y, dt = performance.now() - down.t;
   down = null;
+  if (!settings.tapTurns && !loopPick) return;
   if (Math.abs(dx) > 40 && Math.abs(dx) > 1.5 * Math.abs(dy)) return turn(dx < 0 ? 1 : -1);
   if (Math.hypot(dx, dy) < 14 && dt < 600 && loopPick) return pickLoopBar(e.clientX, e.clientY);
   if (Math.hypot(dx, dy) < 14 && dt < 600) {
@@ -1590,6 +1683,7 @@ $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
 $("libraryBtn").addEventListener("click", () => { closePanels("library"); library.open(); });
 // Only one panel at a time (and the View menu closes too)
 function closePanels(except) {
+  for (const id of ["settingsPanel", "helpPanel"]) if (except !== id) $(id).hidden = true;
   if (except !== "card" && !card.hidden) { card.hidden = true; helpBtn.setAttribute("aria-expanded", "false"); }
   if (except !== "report" && !reportPanel.hidden) { reportPanel.hidden = true; drawOverlay(); }
   if (except !== "library" && library.isOpen) library.close();
@@ -1598,6 +1692,9 @@ function closePanels(except) {
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!viewMenu.hidden) viewMenu.hidden = true;
+  else if (!$("tour").hidden) endTour();
+  else if (!$("settingsPanel").hidden) $("settingsPanel").hidden = true;
+  else if (!$("helpPanel").hidden) $("helpPanel").hidden = true;
   else if (library.isOpen) library.close();
   else if (!reportPanel.hidden) setReport(false);
   else if (marks.markMode) setMarkMode(false);
@@ -1634,7 +1731,7 @@ try { if (localStorage.getItem("pt-steps-hidden") === "1") setCard(false); } cat
 /* ---------- Keep the screen on while the music is up ---------- */
 let wakeLock = null;
 async function keepAwake() {
-  if (wakeLock || !("wakeLock" in navigator) || document.visibilityState !== "visible") return;
+  if (!settings.awake || wakeLock || !("wakeLock" in navigator) || document.visibilityState !== "visible") return;
   try {
     wakeLock = await navigator.wakeLock.request("screen");
     wakeLock.addEventListener("release", () => { wakeLock = null; });

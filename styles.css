@@ -25,7 +25,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --stand: #111214; --rail: #1b1c20; --surface: #24252a; --well: #2b2c32; --well-dark: #18191c;
     --ink: #ecebe7; --muted: #a29d94; --line: #34353b; --line-strong: #474850;
     --brass: #d8b45f; --brass-strong: #e7c677; --brass-wash: #3a3021; --ok: #7cc495; --rec: #f2b8b5; --chart-line: #b8892a;
@@ -34,6 +34,14 @@
     color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+    --stand: #111214; --rail: #1b1c20; --surface: #24252a; --well: #2b2c32; --well-dark: #18191c;
+    --ink: #ecebe7; --muted: #a29d94; --line: #34353b; --line-strong: #474850;
+    --brass: #d8b45f; --brass-strong: #e7c677; --brass-wash: #3a3021; --ok: #7cc495; --rec: #f2b8b5; --chart-line: #b8892a;
+    --page-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .5);
+    --panel-shadow: 0 2px 6px rgba(0, 0, 0, .4), 0 18px 48px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -354,3 +362,34 @@ body.locked .rail .controls, body.locked .rail .counter button, body.locked .pie
 }
 
 .actions:not(:has(> :not([hidden]):not(input))) { display: none; }
+
+/* ---------- Settings, help, the welcome tour ---------- */
+.group.first { border-top: 0; padding-top: 0; }
+.range-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); font-weight: 700; }
+.range-row input { flex: 1; accent-color: var(--brass); }
+.field b { color: var(--brass-strong); }
+.segmented button { border: 0; background: transparent; padding: 7px 14px; border-radius: 8px; font-weight: 700; font-size: 14px; color: var(--muted); cursor: pointer; }
+.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+a.btn { text-decoration: none; }
+.menu-links { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.menu-links .btn { flex: 1; }
+.footer-links { padding-top: 12px; border-top: 1px solid var(--line); }
+.help details { border-top: 1px solid var(--line); padding: 10px 0 2px; }
+.help summary { cursor: pointer; font-weight: 700; font-size: 16px; padding: 2px 0 6px; }
+.help ol, .help ul { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 6px; font-size: 15px; }
+.help p { margin: 4px 0 8px; font-size: 15px; }
+.tour { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(20, 16, 8, .45); animation: fade .2s ease-out; }
+.tour-card {
+  width: min(480px, 100%); display: grid; gap: 16px; justify-items: center; text-align: center;
+  background: var(--surface); border-radius: 24px; padding: 32px 28px 20px; box-shadow: var(--panel-shadow);
+}
+.tour-step { display: grid; gap: 12px; justify-items: center; animation: slide .2s ease-out; }
+.tour-step h2 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 26px; line-height: 1.15; }
+.tour-step p { margin: 0; font-size: 16px; line-height: 1.5; max-width: 38ch; }
+.tour-icon { display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; background: var(--brass-wash); color: var(--brass-strong); }
+.tour-icon .i { width: 36px; height: 36px; stroke-width: 1.6; }
+.tour-dots { display: flex; gap: 8px; }
+.tour-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); transition: width .2s, background .2s; }
+.tour-dots i.on { width: 22px; border-radius: 4px; background: var(--brass); }
+.tour-nav { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.tour-move { display: flex; gap: 8px; margin-left: auto; }

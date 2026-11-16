@@ -9,7 +9,7 @@ const FILES = [
   "engine/practice.js", "engine/recorder.js", "engine/score.js", "engine/scorelesson.js", "engine/search.js",
   "engine/synth.js", "engine/xml.js",
   "vendor/pdfjs/pdf.min.mjs", "vendor/pdfjs/pdf.worker.min.mjs", "vendor/fflate/fflate.js",
-  "samples/warm-ups.pdf", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
+  "samples/warm-ups.pdf", "privacy.html", "support.html", "doc.css", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (e) => {

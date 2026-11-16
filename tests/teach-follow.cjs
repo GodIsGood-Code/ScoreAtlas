@@ -68,7 +68,7 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
   // Follow, in a fresh browser session: the lesson must have been saved on the device
   const followT = truth('short_follow');
   ({ ctx, page } = await open(profile, path.join(DATA, 'short_follow.wav')));
-  const kept = await page.waitForFunction(() => !document.querySelector('#followBtn').disabled, null, { timeout: 8000 }).then(() => true, () => false);
+  const kept = await page.waitForFunction(() => document.querySelector('#followBtn').dataset.ready === 'true', null, { timeout: 8000 }).then(() => true, () => false);
   check('the lesson is still there after reopening', kept);
   await page.click('#followBtn');
   await waitAudio(page, followT.turns[0] + 0.4);
@@ -93,7 +93,7 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
   const reaches = (beat, after) => track.find(([t, b]) => t >= after && b >= beat)[0];
   const restart = track.find(([t, b], i) => i > 0 && b >= 0 && track[i - 1][1] < 0 && t > 5)[0];
   ({ ctx, page } = await open(profile, path.join(DATA, 'short_practice.wav')));
-  await page.waitForFunction(() => !document.querySelector('#followBtn').disabled, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.querySelector('#followBtn').dataset.ready === 'true', null, { timeout: 8000 });
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await page.waitForFunction(() => document.querySelector('#pageNum').value === '3 / 4');

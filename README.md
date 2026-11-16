@@ -4,7 +4,7 @@ Sheet music on the iPad that turns its own pages by listening to you play.
 
 **Try it:** https://godisgood-code.github.io/ScoreAtlas/ (open it in Safari on an iPad)
 
-## What works now (Test 12)
+## What works now (Test 13)
 
 - Open a PDF (scans work) and read it one page at a time. The app reopens your last PDF next time.
 - Turn pages with a Bluetooth page-turn pedal, by tapping (right side forward, left side back), or by swiping.
@@ -23,6 +23,7 @@ Sheet music on the iPad that turns its own pages by listening to you play.
 - **Apple Pencil:** write fingerings and markings on the music (pen, highlighter, fingering numbers, eraser, undo).
 - **Display:** two pages side by side when the iPad is sideways, half-page turns, and a lock for performing.
 - **Offline:** works without Wi-Fi once loaded; add it to the Home Screen for an app icon.
+- Settings (page-turn timing, highlight, tap to turn, light or dark), a Help guide and a welcome tour.
 - A microphone check that shows which notes the app hears.
 
 Everything stays on your iPad.
@@ -37,3 +38,5 @@ Serve the folder with any static web server, for example `python3 -m http.server
 See `CLAUDE.md` for the tests.
 
 PDF rendering uses [PDF.js](https://mozilla.github.io/pdf.js/) (Apache-2.0), included in `vendor/pdfjs/`.
+
+Privacy policy: `privacy.html`. Support: `support.html`. App Store listing and release checklist: `release/`.

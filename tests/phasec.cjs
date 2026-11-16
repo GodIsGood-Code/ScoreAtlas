@@ -173,6 +173,37 @@ const ORIGIN = 'http://localhost:8765';
   check('offline: pieces open from the library', await waitNum('1 / 2'));
   await ctx.setOffline(false);
 
+  // ---------- Settings, Help, the welcome tour ----------
+  await page.click('#viewBtn');
+  await page.click('#openSettings');
+  check('Settings opens from the View menu', await page.isVisible('#settingsPanel'));
+  await page.click('#themeChoice button[data-theme="dark"]');
+  check('appearance can be set to dark', (await pt(() => document.documentElement.dataset.theme)) === 'dark');
+  await page.click('#themeChoice button[data-theme="auto"]');
+  await page.$eval('#turnShift', (e) => { e.value = '0.5'; e.dispatchEvent(new Event('input')); });
+  check('page turns can be set earlier', (await pt(() => window.pageTurner.settings.turnShift)) === 0.5 && (await page.textContent('#turnShiftText')) === '0.5 s earlier');
+  await page.uncheck('#setTap');
+  await page.click('#settingsPanel .panel-close');
+  const pg = await num();
+  const st = await page.$eval('#stand', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await page.mouse.click(st.x + st.w * 0.8, st.y + st.h * 0.6);
+  await page.waitForTimeout(300);
+  check('with tap-to-turn off, a tap doesn\'t turn the page', (await num()) === pg);
+  await page.click('#viewBtn'); await page.click('#openSettings'); await page.check('#setTap'); await page.click('#settingsPanel .panel-close');
+  await page.click('#helpBtn');
+  await page.click('#cardHelp');
+  check('Help opens from the Piece panel', await page.isVisible('#helpPanel') && !(await page.isVisible('#card')));
+  await page.keyboard.press('Escape');
+  check('Esc closes Help', await page.isHidden('#helpPanel'));
+  await pt(() => window.pageTurner.showTour());
+  check('the welcome tour shows', await page.isVisible('#tour'));
+  for (let i = 0; i < 5; i++) await page.click('#tourNext');
+  check('the tour ends with Get started', (await page.textContent('#tourNext')) === 'Get started');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(__dirname, 'output/tour.png') });
+  await page.click('#tourNext');
+  check('... and closes', await page.isHidden('#tour'));
+
   check('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();
   server.close();

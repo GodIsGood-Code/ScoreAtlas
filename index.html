@@ -37,7 +37,7 @@
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 12</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 13</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -57,6 +57,7 @@
             <label class="switch"><input id="halfToggle" type="checkbox"><span><b>Half-page turns</b><small>The next page's top half shows while you play the bottom of this one</small></span></label>
             <button id="lockBtn" class="btn wide" type="button"><svg class="i"><use href="#i-lock"/></svg><span>Lock for performing</span></button>
             <p class="note">Locked, only the pedal turns pages; taps and the Pencil do nothing.</p>
+            <div class="menu-links"><button id="openSettings" class="btn small" type="button">Settings</button><button id="openHelp" class="btn small" type="button">Help</button></div>
           </div>
         </span>
         <button id="loopBtn" class="btn tool" type="button" aria-pressed="false" hidden><svg class="i"><use href="#i-loop"/></svg><span class="lbl">Loop</span></button>
@@ -127,6 +128,113 @@
       <label class="heat-toggle"><input id="heatToggle" type="checkbox" checked> Tint the bars on the page by how often you played them</label>
     </aside>
 
+    <aside class="panel side" id="settingsPanel" aria-label="Settings" hidden>
+      <div class="panel-head">
+        <h2>Settings</h2>
+        <button class="btn icon flat panel-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <section class="group first">
+        <h3>Page turns</h3>
+        <label class="field" for="turnShift">Turn pages <b id="turnShiftText">as now</b></label>
+        <div class="range-row"><span>Later</span><input id="turnShift" type="range" min="-1" max="1" step="0.25" value="0"><span>Earlier</span></div>
+        <p class="note">If pages turn a little too late for your eyes, move this toward Earlier.</p>
+        <label class="switch"><input id="setTap" type="checkbox"><span><b>Tap or swipe the page to turn</b><small>Turn off if you'd rather only use the pedal and the arrows</small></span></label>
+      </section>
+      <section class="group">
+        <h3>While following</h3>
+        <label class="switch"><input id="setHighlight" type="checkbox"><span><b>Highlight the bar being played</b><small>With sheet music added</small></span></label>
+        <label class="switch"><input id="setAwake" type="checkbox"><span><b>Keep the screen on</b><small>So the iPad doesn't dim while you play</small></span></label>
+      </section>
+      <section class="group">
+        <h3>Appearance</h3>
+        <div class="segmented" role="group" aria-label="Appearance" id="themeChoice">
+          <button type="button" data-theme="auto">Automatic</button><button type="button" data-theme="light">Light</button><button type="button" data-theme="dark">Dark</button>
+        </div>
+      </section>
+      <section class="group">
+        <h3>About</h3>
+        <p class="note" id="aboutText">ScoreAtlas · everything stays on this iPad.</p>
+        <div class="actions">
+          <button id="tourAgain" class="btn small" type="button">Show the welcome tour</button>
+          <a class="btn small" href="privacy.html" target="_blank" rel="noopener">Privacy</a>
+          <a class="btn small" href="support.html" target="_blank" rel="noopener">Support</a>
+        </div>
+      </section>
+    </aside>
+
+    <aside class="panel side help" id="helpPanel" aria-label="Help" hidden>
+      <div class="panel-head">
+        <h2>Help</h2>
+        <button class="btn icon flat panel-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <details open><summary>Getting started</summary>
+        <ol>
+          <li>Tap the piece's name at the top left to open your <b>Library</b>, then <b>Add a PDF</b>. Scans and photos of music work.</li>
+          <li>Tap <b>Piece</b> and either <b>Add sheet music</b> (a MusicXML file) or <b>Teach</b> it.</li>
+          <li>Tap <b>Follow</b> and play. The first time, allow the microphone.</li>
+        </ol>
+      </details>
+      <details><summary>Sheet music (MusicXML)</summary>
+        <p>With the piece's sheet music, ScoreAtlas follows it straight away, with no teaching, and highlights the bar you're playing.</p>
+        <ul>
+          <li><b>From MuseScore.com:</b> download the piece as MusicXML.</li>
+          <li><b>From your own scan:</b> open the PDF in the free Audiveris app on a Mac or PC, let it read the music, and export MusicXML (.mxl).</li>
+          <li>Send the file to the iPad (AirDrop or iCloud Drive), then <b>Piece → Add sheet music</b>.</li>
+          <li><b>Sheet music options</b>: tick only the parts you play (a choir or orchestra part is left out), type the page the music starts on (one movement of a longer PDF), or the first bar of each page if the file came from a different edition.</li>
+        </ul>
+      </details>
+      <details><summary>Teaching a piece</summary>
+        <p><b>Piece → Teach</b>, then play the piece (or any section) while turning pages yourself with the pedal or a tap. Tap <b>Done</b> at the top when finished. Teach more sections any time; they add up. <b>Forget</b> clears what a piece learned.</p>
+      </details>
+      <details><summary>Following and practising</summary>
+        <ul>
+          <li>Start anywhere, stop, repeat, go back or skip ahead: ScoreAtlas finds you again. After skipping, turn to that page yourself and it finds you within a second.</li>
+          <li><b>Loop</b>: tap Loop, then the first and the last bar. Each repetition is counted with its tempo.</li>
+          <li>Tap <b>Stop</b> for the <b>practice report</b>: bars you practised most, where you hesitated, your tempo bar by bar. <b>Listen back</b> plays your session with the pages following.</li>
+        </ul>
+      </details>
+      <details><summary>Library and setlists</summary>
+        <p>Every PDF you open is kept in the Library. In <b>Setlists</b>, make a list, add pieces in order and tap <b>Play</b>: at the end of a piece, the forward pedal opens the next one, and Follow carries on.</p>
+      </details>
+      <details><summary>Apple Pencil</summary>
+        <p>Tap <b>Mark</b> first (so nothing is marked by accident), then write with the Pencil or a finger: pens in three colours, highlighter, fingering numbers 1–5, eraser and undo. Tap <b>Done</b> when finished. Markings stay with the piece.</p>
+      </details>
+      <details><summary>View, pedal and performing</summary>
+        <ul>
+          <li><b>View</b>: two pages side by side when the iPad is sideways; half-page turns; <b>Lock for performing</b> (only the pedal turns pages; hold the lock button to unlock).</li>
+          <li>A Bluetooth page-turn pedal works as forward and back. Tap the right side of the page to go forward, the left side to go back, or swipe.</li>
+        </ul>
+      </details>
+      <details><summary>Offline and the Home Screen</summary>
+        <p>After loading once with Wi-Fi, ScoreAtlas works without it. For an app icon: <b>Share → Add to Home Screen</b>.</p>
+      </details>
+      <details><summary>Something isn't working</summary>
+        <ul>
+          <li><b>No pages turn:</b> the piece needs sheet music or one taught playthrough (see Piece).</li>
+          <li><b>The microphone is off:</b> in Safari, tap <b>aA → Website Settings → Microphone → Allow</b>, then reload. <b>Piece → Check microphone</b> shows the notes it hears.</li>
+          <li><b>Turns feel late or early:</b> <b>Settings → Turn pages</b>.</li>
+          <li><b>It loses you in a passage:</b> teach just that passage (<b>Piece → Teach</b>); taught sections are used where they fit better.</li>
+        </ul>
+      </details>
+      <div class="actions"><button id="helpTour" class="btn small" type="button">Show the welcome tour</button></div>
+    </aside>
+
+    <div class="tour" id="tour" hidden role="dialog" aria-modal="true" aria-label="Welcome to ScoreAtlas">
+      <div class="tour-card">
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-book"/></svg></span><h2>Welcome to ScoreAtlas</h2><p>Your sheet music on iPad, with pages that turn by themselves while you play.</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-plus"/></svg></span><h2>Bring your music</h2><p>Tap the piece's name at the top left to open your Library, then <b>Add a PDF</b>. Scans and photos of music work.</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-piece"/></svg></span><h2>Teach it, or add the sheet music</h2><p>Under <b>Piece</b>: add the piece's MusicXML file and ScoreAtlas follows it right away, or <b>Teach</b> it by playing it once while turning the pages yourself.</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-mic"/></svg></span><h2>Tap Follow and play</h2><p>The bar you're playing lights up, and the page turns just before you need it. Stop, repeat, skip around: it keeps up. Your Bluetooth pedal works too.</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-loop"/></svg></span><h2>Practise with purpose</h2><p>Loop a passage and count each repetition, see a report of your session, listen back, and write fingerings with Apple Pencil (tap <b>Mark</b> first).</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-lock"/></svg></span><h2>Ready for the stage</h2><p>Setlists, two pages side by side, half-page turns and a lock for performing. Everything stays on your iPad and works offline.</p><p class="note">When you first tap Follow, allow the microphone.</p></div>
+        <div class="tour-dots" id="tourDots" aria-hidden="true"></div>
+        <div class="tour-nav">
+          <button id="tourSkip" class="btn small flat" type="button">Skip</button>
+          <span class="tour-move"><button id="tourBack" class="btn small" type="button">Back</button><button id="tourNext" class="btn small primary" type="button">Next</button></span>
+        </div>
+      </div>
+    </div>
+
     <aside class="panel side" id="card" aria-label="This piece">
       <div class="panel-head card-head">
         <div><p class="eyebrow">This piece</p><h2 id="pieceTitle">ScoreAtlas</h2></div>
@@ -184,14 +292,17 @@
       </section>
 
       <details class="group whatsnew">
-        <summary>What's new in Test 12</summary>
+        <summary>What's new in Test 13</summary>
         <ol>
-          <li><b>A new look.</b> Your piece's name (top left) opens the <b>Library</b>. <b>Piece</b> (top right) holds everything about the open piece: sheet music, Teach, practice report, microphone.</li>
-          <li><b>Marking needs Mark on:</b> tap <b>Mark</b> before writing, so the Pencil never marks the music by accident. <b>Done</b> turns it off.</li>
-          <li><b>Teach</b> is under <b>Piece</b>; while teaching, tap <b>Done</b> in the bar at the top.</li>
-          <li><b>Esc</b> or the ✕ closes any panel; only one panel opens at a time.</li>
+          <li><b>Settings</b> (here below, or under View): turn pages earlier or later, the bar highlight, tap to turn, keeping the screen on, light or dark.</li>
+          <li><b>Help</b>: a guide to everything, with troubleshooting.</li>
+          <li>A <b>welcome tour</b> for first-time users (Settings → Show the welcome tour).</li>
         </ol>
       </details>
+      <div class="actions footer-links">
+        <button id="cardSettings" class="btn small" type="button">Settings</button>
+        <button id="cardHelp" class="btn small" type="button">Help</button>
+      </div>
       <p class="offline-note" id="offlineNote" hidden>✓ Saved on this iPad: works without Wi-Fi. For an app icon: Share, then Add to Home Screen.</p>
     </aside>
   </div>
