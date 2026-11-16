@@ -44,7 +44,7 @@ export const FOLLOW_SETTINGS = {
   // Sections learned from sheet music match real playing less closely than a taught playthrough (no pedal,
   // dynamics or timing in the written notes): real playing fits at about 0.35–0.6 of the background there,
   // random playing at about 0.65–0.9. The same checks, with these limits:
-  score: { goodRatio: 0.6, strongRatio: 0.42, turnRatio: 0.65, lostRatio: 0.72, jumpMargin: 0.06, alikeMargin: 0.08, trackRatio: 0.45, tail: false },
+  score: { goodRatio: 0.6, strongRatio: 0.42, turnRatio: 0.65, lostRatio: 0.72, jumpMargin: 0.06, alikeMargin: 0.08, trackRatio: 0.55, tail: false },
   ambiguity: 1.12, // results within this ratio of the best count as equally good (e.g. a repeat) ...
   alikeMargin: 0.04, // ... or within this much of it: tiny differences between identical passages are noise
   jumpRatio: 0.7, // a jump needs a place this much better than where we think the pianist is ...
@@ -52,6 +52,7 @@ export const FOLLOW_SETTINGS = {
   flipHint: 15, // seconds a page flip by the pianist counts as a hint of where they're about to play
   coverCost: 0.08, // re-teaching: a section's opening and ending must match this well to count as covered
   jumpDistance: 2, // seconds: closer than this is not a jump
+  racePace: 1.2, // page turns wait while the tracking moves this much faster than the pianist's pace of the last seconds
   lostAfter: 1.5, // seconds of poor matching before looking up the whole piece again
 };
 
@@ -138,6 +139,7 @@ export function flatten(lesson) {
     pageAt: new Int16Array(length), // the page showing at each moment while teaching
     fromScore: new Uint8Array(length), // 1 where the section was learned from sheet music
     measure: new Int16Array(length).fill(-1), // the score measure being played (sheet-music sections only)
+    played: new Int16Array(length).fill(-1), // ... and its place in the played order (repeats count twice)
     startOf: new Int32Array(length), // where each moment's section starts ...
     endOf: new Int32Array(length), // ... and ends (exclusive)
     starts: [],
@@ -153,7 +155,9 @@ export function flatten(lesson) {
     flat.startOf.fill(at, at, at + sec.length);
     if (sec.fromScore) flat.fromScore.fill(1, at, at + sec.length);
     if (sec.measure) flat.measure.set(sec.measure, at);
+    if (sec.played) flat.played.set(sec.played, at);
     if (sec.layout) flat.layout = sec.layout; // where each score measure is on the page
+    if (sec.order) flat.order = sec.order; // played-order index -> score measure
     flat.endOf.fill(at + sec.length, at, at + sec.length);
     flat.starts.push(at);
     flat.ends.push(at + sec.length);
@@ -256,6 +260,7 @@ export class Follower {
 
   afterPause() {
     this.recent = []; // what was played before the pause may be from somewhere else
+    this.trail = []; // ... and the pace may be different
     this.expectJump = true;
     this.vote = null;
     if (this.status === "following") this.holdTurns = true;
@@ -286,6 +291,8 @@ export class Follower {
     this.D = next;
     this.next = D;
     this.position = bestJ;
+    (this.trail ||= []).push(bestJ); // recent positions, to notice the tracking racing ahead
+    if (this.trail.length > 3 * FRAME_RATE) this.trail.shift();
     this.recentCost = this.recentCost * 0.92 + 0.08 * this.cost(frame, bestJ);
     // How well this sound fits a random moment of the piece (a yardstick for recentCost)
     let typical = 0;
@@ -321,7 +328,7 @@ export class Follower {
 
   checkTurns() {
     const turns = this.lesson.turns;
-    if (this.holdTurns || this.unsure || this.status !== "following") { this.streak = 0; return; }
+    if (this.holdTurns || this.unsure || this.status !== "following" || this.racing()) { this.streak = 0; return; }
     while (this.turnIndex < turns.length) {
       const t = turns[this.turnIndex];
       if (this.position >= t.frame - this.frames.ahead) {
@@ -334,6 +341,17 @@ export class Follower {
       } else this.streak = 0;
       break;
     }
+  }
+
+  // Has the tracking just raced ahead much faster than the pianist has been playing? (It can slide through a held
+  // note or a passage it isn't sure of.) Then a page turn waits until the pace looks right again, or the tracking
+  // comes back: common sense says a pianist doesn't suddenly play half again as fast.
+  racing() {
+    const tr = this.trail, n = tr ? tr.length : 0, sec = FRAME_RATE;
+    if (n < 3 * sec) return false;
+    const base = tr[n - 1 - sec];
+    const pace = Math.min(2.5, Math.max(0.5, (base - tr[0]) / (n - 1 - sec)));
+    return tr[n - 1] > base + sec * pace * this.cfg.racePace + 5;
   }
 
   // Before turning: do the last couple of seconds really sound like the music leading up to this point?
@@ -373,9 +391,19 @@ export class Follower {
     // Music that sounds the same in several places only moves us to one on the page the pianist is looking at,
     // or else the page next to it (going back over a page turn is common), earlier first. Further away they may be
     // playing a copy that was never taught; if they really jumped there, they'll flip the page.
+    // Among those, the place just ahead of where we think the pianist is (or was, just before we lost them) comes
+    // first, since they usually go on; after a pause, the nearest place behind; then the earliest
+    // After a pause the pianist more often goes back (to repeat something): then the nearest place behind comes first
+    const from = this.status === "following" ? this.position : this.lostAt ? this.lostAt.position : -1;
+    const ahead = (c) => {
+      if (from < 0) return Infinity;
+      const d = c.frame - from;
+      if (this.expectJump) return d <= this.frames.jump ? -d : 1e6 + d;
+      return d >= -this.frames.jump ? d : Infinity;
+    };
     for (const distance of [0, 1]) {
       const near = alike.filter((c) => Math.abs(this.pageAt[c.frame] - this.page) === distance);
-      if (near.length) return near.sort((a, b) => a.frame - b.frame)[0];
+      if (near.length) return near.sort((a, b) => ahead(a) - ahead(b) || a.frame - b.frame)[0];
     }
     return null;
   }
@@ -416,6 +444,12 @@ export class Follower {
         strong = near.cost <= this.limits(near.frame).strongRatio * background;
       }
     }
+    // Common sense: a so-so match may move us within the page on screen, but going to another page takes a strong
+    // match (or a page flip by the pianist), since a look-alike passage on another page is more likely than a jump
+    // (After a pause a restart is expected, and going back over a page turn is common: the next page either way is fine.)
+    const pageGap = Math.abs(this.pageAt[pick.frame] - this.page);
+    const otherPage = pageGap > 0 && !(this.flip && this.pageAt[pick.frame] === this.flip.page) && !(this.expectJump && pageGap === 1);
+    if (otherPage && !strong) { this.pending = null; return; }
     const agrees = this.pending && Math.abs(this.pending.frame - pick.frame) <= this.frames.jump;
     if (strong || agrees) this.moveTo(pick.frame);
     else this.pending = pick;
@@ -430,7 +464,8 @@ export class Follower {
     const pick = this.choose(candidates, background);
     const here = this.searcher.costNear(row, this.position, F.jump);
     // Two checks in a row where what we hear doesn't fit where we are (or anywhere): we've lost the pianist
-    this.misfit = here <= this.limits(this.position).lostRatio * background ? 0 : (this.misfit || 0) + 1;
+    // (if the tracker's own frame-by-frame match is good, we haven't lost anyone, whatever this slower check says)
+    this.misfit = here <= this.limits(this.position).lostRatio * background || this.trackingWell() ? 0 : (this.misfit || 0) + 1;
     if (this.misfit >= 2) {
       this.misfit = 0;
       this.lostAt = { position: this.position, clock: this.clock };
@@ -439,6 +474,14 @@ export class Follower {
       return;
     }
     if (!pick) { this.vote = null; return; }
+    // Common sense: while what we hear still fits where we are, the pianist is there, however well some copy of
+    // the music elsewhere fits (refrains); only a page flip by the pianist overrides that
+    if (this.trackingWell() && !(this.flip && this.pageAt[this.position] !== this.flip.page)) {
+      this.vote = null;
+      this.holdTurns = false;
+      this.expectJump = false;
+      return;
+    }
     if (Math.abs(pick.frame - this.position) <= F.jump) {
       // the best fit is where we already are: the pianist went on from there
       this.vote = null;
@@ -468,11 +511,13 @@ export class Follower {
 
   // Start tracking from lesson frame j (after a lookup), and show the page that goes with it
   moveTo(j) {
+    this.moves = (this.moves || 0) + 1; // lets the measure highlight follow a jump at once
     this.D.fill(Infinity);
     this.next.fill(Infinity);
     this.D[j] = 0;
     this.reach = j;
     this.position = j;
+    this.trail = [];
     this.recentCost = 0.2;
     this.lostRun = 0;
     this.streak = 0;

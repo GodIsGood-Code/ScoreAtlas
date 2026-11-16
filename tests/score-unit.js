@@ -1,5 +1,5 @@
 // Unit checks of reading MusicXML and the order measures are played in.  node tests/score-unit.js
-import { readScore, playOrder } from "../engine/score.js";
+import { readScore, playOrder, keepParts, withPageStarts, parsePageStarts } from "../engine/score.js";
 
 // A one-staff score; each measure: { notes: "C4 D4" (quarters), marks: MusicXML to put first, end: MusicXML to put last }
 function xml(measures, { divisions = 1 } = {}) {
@@ -51,5 +51,23 @@ check("al Fine with the Fine not read: stop at the repeat sign", order([{ marks:
   check("chord, rest, second voice", m1, ["60@0+1", "64@0+1", "68@2+3", "48@0+4"]);
   check("a tied note isn't struck again", s.measures[1].notes.map((n) => `${n.midi}@${n.start}`), ["69@1"]);
   check("measure length", s.measures.map((m) => m.quarters), [4, 4]);
+}
+// Parts, and the pianist's own page breaks given as bar numbers
+{
+  const note = (step, octave, dur = 4) => `<note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>${dur}</duration></note>`;
+  const bar = (n, body) => `<measure number="${n}">${n === 1 ? "<attributes><divisions>1</divisions></attributes>" : ""}${body}</measure>`;
+  const s = readScore(`<?xml version="1.0"?><score-partwise><part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part><score-part id="P2"><part-name>Violin</part-name></score-part></part-list>
+    <part id="P1">${bar(1, note("C", 4))}${bar(2, note("D", 4))}${bar(3, note("E", 4))}${bar(4, note("F", 4))}</part>
+    <part id="P2">${bar(1, note("G", 5))}${bar(2, note("A", 5))}${bar(3, note("B", 5))}${bar(4, note("C", 6))}</part></score-partwise>`);
+  check("part names", s.parts.map((p) => p.name), ["Piano", "Violin"]);
+  check("notes know their part", s.measures[0].notes.map((n) => n.part), [0, 1]);
+  check("keep only the piano part", keepParts(s, [0]).measures.map((m) => m.notes.map((n) => n.midi).join()), ["60", "62", "64", "65"]);
+  check("keeping no parts means all of them", keepParts(s, []).measures[0].notes.length, 2);
+  const paged = withPageStarts(s, [3]);
+  check("bar numbers give the pages", paged.measures.map((m) => m.page), [1, 1, 2, 2]);
+  check("... and the page count", paged.pages, 2);
+  check("reading typed bar numbers", parsePageStarts("12, 27 41;  60"), [12, 27, 41, 60]);
+  check("page turns from bar numbers", playOrder(paged).map((i) => paged.measures[i].page), [1, 1, 2, 2]);
 }
 process.exit(fails ? 1 : 0);

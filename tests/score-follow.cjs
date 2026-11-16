@@ -63,6 +63,20 @@ const PERF = path.join(__dirname, 'output/perf');
   check('turned to page 2 for section B', !!to2, fmt(to2, 64));
   check('turned back to page 1 for the D.C.', !!back1, fmt(back1, 96));
   check('no other page changes', turns.length === 2, turns.map((t) => `${t.time.toFixed(1)}s p${t.page} ${t.how}`).join(', '));
+
+  // Sheet music options: type the first bar of page 2 and apply; the choice is kept after a reload
+  await page.click('#followBtn'); // stop
+  check('sheet music options shown', await page.isVisible('#scoreOpts'));
+  check('no part list for a one-part piece', !(await page.isVisible('#partsBox')));
+  await page.fill('#barsInput', '9');
+  await page.evaluate(() => { document.querySelector('#toast').textContent = ''; });
+  await page.click('#applyBtn');
+  await page.waitForFunction(() => /Sheet music ready/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 }).catch(() => {});
+  const info2 = (await page.textContent('#lessonInfo')).trim();
+  check('rebuilt from bar numbers', /Sheet music: 16 measures on 2 pages\.$/.test(info2), info2);
+  await page.reload();
+  await page.waitForFunction(() => /Sheet music/.test(document.querySelector('#lessonInfo').textContent), null, { timeout: 15000 }).catch(() => {});
+  check('bar numbers kept after a reload', (await page.inputValue('#barsInput')) === '9', await page.inputValue('#barsInput'));
   check('no page errors', errors.length === 0, errors.join('; '));
   await ctx.close();
   server.close();

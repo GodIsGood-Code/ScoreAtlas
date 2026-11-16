@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { featuresOf } from "./engine-eval.js";
-import { readScore, playOrder } from "../engine/score.js";
+import { readScore, playOrder, keepParts, withPageStarts } from "../engine/score.js";
 import { scoreSection } from "../engine/scorelesson.js";
 import { Follower } from "../engine/follower.js";
 
@@ -79,6 +79,62 @@ for (const [file, pagesAfter] of [["aba_repeat.musicxml", [2, 3]], ["omr/aba_rep
     const { errs, extra } = judge(follow(lesson, path.join(SCORES, "warmups_play.wav")), expected);
     check(`sample score read by Audiveris (${score.measures.length} of 64 measures found): page turns`, errs.filter((e) => e !== null).length >= 2,
       `${fmt(errs)}${extra.length ? "; extra: " + extra.map((c) => `${c.t.toFixed(1)}s→p${c.page} ${c.why}`).join(" ") : ""}; learned in ${ms} ms`);
+  }
+}
+
+// 3) Bar numbers: sheet music whose own pages don't match the pianist's PDF. The pianist types the first bar of each
+// page (from page 2), and the page turns come from those. Here: page 2 starts at bar 5 and page 3 at bar 13, so the
+// A A B A performance turns to page 2 in the middle of A, back to page 1 for the repeat, to 2 again, and to 3 in B.
+{
+  const file = "aba_repeat.musicxml";
+  if (fs.existsSync(path.join(SCORES, file))) {
+    const score = withPageStarts(readScore(fs.readFileSync(path.join(SCORES, file))), [5, 13]);
+    const lesson = { version: 2, sections: [scoreSection(score)] };
+    for (const live of ["faster", "slower", "pause"]) {
+      const T = JSON.parse(fs.readFileSync(path.join(PERF, live + ".json"), "utf8"));
+      const expected = [[16, 2], [32, 1], [48, 2], [80, 3]].map(([b, page]) => ({ t: interp(T.beats, T.times, b), page }));
+      const { errs, extra } = judge(follow(lesson, path.join(PERF, live + ".wav")), expected);
+      check(`bar numbers 5, 13 / ${live}: page turns on time`, errs.every((e) => e !== null) && extra.length === 0,
+        `${fmt(errs)}${extra.length ? "; extra: " + extra.map((c) => `${c.t.toFixed(1)}s→p${c.page} ${c.why}`).join(" ") : ""}`);
+    }
+  }
+}
+
+// 4) Solo part: a duet version of the piece. Part 2 (the "orchestra") holds chords under the piano throughout and
+// has 8 bars on its own between B and the last A, where the piano rests. The pianist practises alone, so the
+// performance goes from B straight on to A. Keeping only the piano part, the turns must still come on time.
+{
+  const file = "aba_repeat.musicxml";
+  if (fs.existsSync(path.join(SCORES, file))) {
+    const base = readScore(fs.readFileSync(path.join(SCORES, file)));
+    const measures = base.measures.map((m) => ({ ...m, notes: [...m.notes] }));
+    for (const m of measures) {
+      const low = Math.min(...m.notes.map((n) => n.midi));
+      if (Number.isFinite(low)) for (const d of [12, 16, 19]) m.notes.push({ midi: low + d, start: 0, length: m.quarters, part: 1 });
+    }
+    // the orchestra's 8 bars alone: B's music a fourth higher, at the top of page 3 (before the last A)
+    const tutti = measures.slice(8, 16).map((m, k) => ({ ...m, number: `T${k + 1}`, page: 3, system: k < 4 ? 1 : 2,
+      notes: m.notes.filter((n) => n.part === 0).map((n) => ({ ...n, midi: n.midi + 5, part: 1 })) }));
+    measures.splice(16, 0, ...tutti);
+    measures.forEach((m, i) => m.notes.forEach((n) => { n.measure = i; }));
+    const duo = { ...base, measures, parts: [...base.parts, { id: "P2", name: "Orchestra", staves: 1 }] };
+    const order = playOrder(duo);
+    check("duet: played order is A A B, 8 bars of orchestra, A (40 measures)", order.length === 40, `${order.length}`);
+    for (const [label, parts] of [["solo part only", [0]], ["all parts (for comparison)", null]]) {
+      const lesson = { version: 2, sections: [scoreSection(keepParts(duo, parts))] };
+      let ok = 0, total = 0;
+      const notes = [];
+      for (const live of ["faster", "slower", "voicing"]) {
+        const T = JSON.parse(fs.readFileSync(path.join(PERF, live + ".json"), "utf8"));
+        const expected = [[64, 2], [96, 3]].map(([b, page]) => ({ t: interp(T.beats, T.times, b), page }));
+        const { errs, extra } = judge(follow(lesson, path.join(PERF, live + ".wav")), expected);
+        total++;
+        if (errs.every((e) => e !== null) && extra.length === 0) ok++;
+        notes.push(`${live}: ${fmt(errs)}${extra.length ? " extra " + extra.map((c) => `${c.t.toFixed(1)}s→p${c.page}`).join(" ") : ""}`);
+      }
+      if (parts) check(`duet, ${label}: page turns on time`, ok === total, notes.join("; "));
+      else results.push(`INFO  duet, ${label}: ${ok}/${total} on time (${notes.join("; ")})`);
+    }
   }
 }
 

@@ -30,6 +30,7 @@ TAIL = 2.5
 CHORDS = {"C": (48, 4), "Am": (45, 3), "F": (41, 4), "G": (43, 4), "Dm": (50, 3), "Em": (52, 3), "E7": (52, 4)}
 A = ["C", "Am", "F", "G", "C", "Am", ("Dm", "G"), "C"]
 B = ["F", "G", "Em", "Am", "Dm", "G", "E7", "Am"]
+C = ["Am", "Dm", "G", "C", "F", "Dm", "E7", "Am"]
 MAJOR = {0, 2, 4, 5, 7, 9, 11}
 RHYTHMS = [[2, 1, 1], [1, 1, 1, 1], [1, 1, 2], [3, 1], [1.5, 0.5, 1, 1], [1, 0.5, 0.5, 2]]
 
@@ -70,10 +71,18 @@ def melody(chords, rng, start_beat):
 
 
 def build_score(short=False):
+    """short=False: A A B A (32 bars). short=True: A B (16 bars). short="rondo": A B A C A B A (56 bars), the refrain
+    A on four pages."""
     rng = random.Random(7)
     a_mel = melody(A, rng, 0)
     b_mel = melody(B, rng, 0)
-    form = [("A", A, a_mel), ("B", B, b_mel)] if short else [("A", A, a_mel), ("A", A, a_mel), ("B", B, b_mel), ("A", A, a_mel)]
+    if short == "rondo":
+        c_mel = melody(C, rng, 0)
+        form = [("A", A, a_mel), ("B", B, b_mel), ("A", A, a_mel), ("C", C, c_mel), ("A", A, a_mel), ("B", B, b_mel), ("A", A, a_mel)]
+    elif short:
+        form = [("A", A, a_mel), ("B", B, b_mel)]
+    else:
+        form = [("A", A, a_mel), ("A", A, a_mel), ("B", B, b_mel), ("A", A, a_mel)]
     events, pedals = [], []
     for s, (_, chords, mel) in enumerate(form):
         base = 32 * s
@@ -112,14 +121,15 @@ def tempo_map(total, base, depth, phase, ritard=0.18, pause_at=None, pause_len=0
 
 
 def perform(name, out_dir, short, base=76, depth=0.05, phase=0.0, mel=88, acc=58, vel_jitter=6, timing=0.010,
-            drop=0.0, wrong=0.0, pedal=True, pause_at=None, pause_len=0.0, noise_db=-50, tilt=0.0, gain_db=0.0, seed=1):
+            drop=0.0, wrong=0.0, pedal=True, pause_at=None, pause_len=0.0, noise_db=-50, tilt=0.0, gain_db=0.0, seed=1,
+            program=0):
     rng = random.Random(seed)
     events, pedals, total = build_score(short)
     beats, times = tempo_map(total, base, depth, phase, pause_at=pause_at, pause_len=pause_len)
     at = lambda b: float(np.interp(b, beats, times))
     pause_start = at(pause_at) - pause_len if pause_at is not None else None
 
-    inst = pretty_midi.Instrument(program=0)
+    inst = pretty_midi.Instrument(program=program)
     played = []
     for (sb, db, pitch, role) in events:
         if rng.random() < drop:
@@ -144,7 +154,7 @@ def perform(name, out_dir, short, base=76, depth=0.05, phase=0.0, mel=88, acc=58
             else:
                 inst.control_changes += [pretty_midi.ControlChange(64, 127, t_down), pretty_midi.ControlChange(64, 0, t_up)]
     render(inst, out_dir, name, at(total) + TAIL, noise_db, tilt, gain_db, seed)
-    page_bars = 4 if short else 8
+    page_bars = 4 if short is True else 8
     turn_beats = [4 * page_bars * k - 1 for k in range(1, total // (4 * page_bars))]
     with open(os.path.join(out_dir, name + ".json"), "w") as f:
         json.dump({"beats": beats[::5].round(3).tolist(), "times": times[::5].round(4).tolist(),
@@ -353,6 +363,17 @@ SECTIONS = {
     "s_teach_late": dict(initial_page=3, segments=[("play", 70, 128)], base=74, phase=0.9, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=54),
     "s_teach_cover": dict(initial_page=2, segments=[("play", 50, 110)], base=74, phase=1.2, mel=88, acc=58, noise_db=-50, tilt=0.0, seed=55),
 }
+# The rondo (A B A C A B A, 7 pages of 8 bars), followed from its sheet music in tests/score-eval.js.
+# program 1 and 4 are other pianos in the sound font, so the playing sounds less like the app's synthesized reference.
+RONDO = {
+    "r_play": dict(base=80, depth=0.05, phase=0.3, noise_db=-46, seed=71),
+    "r_fast": dict(base=100, depth=0.05, phase=1.1, noise_db=-46, seed=72),
+    "r_slow": dict(base=60, depth=0.06, phase=2.0, noise_db=-46, seed=73),
+    "r_bright": dict(base=82, depth=0.05, phase=0.8, program=1, mel=96, acc=50, noise_db=-44, tilt=0.4, seed=74),
+    "r_rhodes": dict(base=78, depth=0.05, phase=1.5, program=4, noise_db=-44, seed=75),
+    "r_mistakes": dict(base=84, depth=0.06, phase=2.6, drop=0.06, wrong=0.04, timing=0.03, noise_db=-42, seed=76),
+    "r_voicing": dict(base=80, depth=0.06, phase=0.1, mel=112, acc=36, vel_jitter=10, noise_db=-44, seed=77),
+}
 SHORT_CASES = {
     "short_teach": dict(base=84, depth=0.04, phase=0.0, mel=88, acc=58, noise_db=-50, seed=11),
     # practice on the short piece (pages are 4 bars = 16 beats): start on page 3, then go back to page 2
@@ -365,6 +386,12 @@ if __name__ == "__main__":
     short = "--short" in sys.argv
     only = [a for a in sys.argv[2:] if not a.startswith("--")]
     os.makedirs(out, exist_ok=True)
+    if "--rondo" in sys.argv:
+        for name, cfg in RONDO.items():
+            if not only or name in only:
+                perform(name, out, "rondo", **cfg)
+                print("made", name)
+        sys.exit(0)
     if "--sections" in sys.argv:
         for name, cfg in SECTIONS.items():
             if not only or name in only:

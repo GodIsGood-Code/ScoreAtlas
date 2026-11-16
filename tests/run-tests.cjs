@@ -85,6 +85,7 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   check('held pedal turns once', (await num()) === '2 / 4', await num());
 
   // Taps and swipes
+  await page.click('#cardClose'); // the test steps card covers part of the page
   const box = await page.$eval('#stand', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
   await page.mouse.click(box.x + box.w * 0.15, box.y + box.h * 0.5);
   check('tap left -> page 1', await waitNum('1 / 4'));
@@ -96,6 +97,7 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   await page.keyboard.press('ArrowRight'); await waitNum('4 / 4');
   await page.keyboard.press('ArrowRight'); await page.waitForTimeout(100);
   check('past the end shows "Last page"', (await page.isVisible('#toast')) && (await page.textContent('#toast')) === 'Last page');
+  await page.click('#helpBtn'); // show the card again
 
   // Microphone check with the fake microphone playing C major
   await page.click('#micBtn');

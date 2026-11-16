@@ -6,7 +6,21 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 7 (current):** sheet music, no teaching (roadmap steps 4 and 5). "Add sheet music" takes the piece's MusicXML
+- **Test 8 (current):** fixes from the owner's Test 7 feedback plus two features they asked for. Feedback: "works
+  pretty decent", but with passages that recur through the piece it jumped to other copies; turns sometimes came late
+  enough that they had to pause; the highlight lagged and jumped back and forth; they couldn't try practice moves
+  because the run-through had trouble. Fixes: common-sense rules (while the tracker matches well it never jumps; a
+  lookup that lands on another page needs a strong match, or a page flip, or a just-after-pause neighbour page; after a
+  pause or when lost, prefer the copy right ahead of where they were), sheet-music turns a full beat early, a quiet
+  1.5 s lead-in so bar 1 isn't lost to the room-noise warm-up, page turns wait while the tracking races ahead of the
+  pianist's pace (`racing`), and a smoothed highlight (`engine/marker.js`). Features: **bar numbers per page** (sheet
+  music from anywhere, e.g. MuseScore, with the owner's own PDF: they type the first bar of each page from page 2; the
+  measures are found on the PDF by counting barlines) and **parts I play** (only those parts are in the reference;
+  passages where the pianist rests are squeezed out like silences). Both are under "Sheet music options" in the card,
+  stored with the sheet music (`scoreFile`, `options`, `partList` on the section), and Apply rebuilds the section.
+  The owner is working on Schumann's Piano Concerto (Henle two-piano edition); Audiveris couldn't finish reading it,
+  so MuseScore MusicXML plus bar numbers plus the solo part is the suggested route (or Teach).
+- **Test 7:** sheet music, no teaching (roadmap steps 4 and 5). "Add sheet music" takes the piece's MusicXML
   (.mxl from Audiveris on the owner's Mac; the owner chose Audiveris), finds its measures on the PDF's pages, synthesizes
   a reference performance in the played order (repeats, endings, D.C./D.S., coda, Fine) and adds it as a section;
   Follow then turns pages without teaching and highlights the measure being played. Taught sections still work and win
@@ -49,7 +63,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
    jumps between them without flipping the page, the follower may guess the copy on the page that's showing; it
    corrects itself a couple of seconds later, and a page flip by the pianist settles it at once.
 
-### Phase A: Reading the sheet music (the foundation) — built in Test 7, waiting for the owner's feedback
+### Phase A: Reading the sheet music (the foundation) — built in Test 7, fixed and extended in Test 8
 
 4. **Page turning without teaching.** Turn scans into notes with a reader that also records where each measure sits
    on the page (for example an OMR tool with measure positions, such as Audiveris), build the follower's reference
@@ -94,6 +108,8 @@ Steps are numbered across phases, in order. Work through them in that order unle
   - `fft.js`: radix-2 FFT.
   - `features.js`: microphone samples → 50 frames per second: chroma (12 note names, loudness-compressed), onset
     chroma (notes just struck), `sounding` (music versus the room's learned background), display data.
+  - `marker.js`: `MeasureMarker` smooths the highlight in played order: one measure forward at once, further forward
+    after 0.25 s, back after 0.6 s, at once after a follower jump (`moves`); keeps its measure through 1.5 s unsure.
   - `follower.js`: `makeLesson` (from teaching frames and page turns; long silences squeezed out) and `Follower`:
     tracking by online DTW (each live frame advances the lesson by 0–3 frames; turns 0.3 s before the taught
     moment) plus practice logic: states waiting → searching ↔ following (→ finished); looks up the recent 2.5 s
@@ -105,21 +121,28 @@ Steps are numbered across phases, in order. Work through them in that order unle
     the piece): real playing matches at under about 0.2 of it, random playing at over about 0.5. A lookup must be
     under 0.35 of it (under 0.2 acts at once, otherwise two lookups must agree; if the full 2.5 s isn't conclusive,
     the last 0.8 s is tried alone); a page turn needs the recent playing near the turn under 0.4; two checks in a row
-    over 0.5 mean the pianist is lost. After losing them, the closest good place within 3 s of where they were wins. Sections: `sectionsOf`, `addSection` (drops sections the new one
+    over 0.5 mean the pianist is lost. Common sense (Test 8): while `trackingWell` the periodic check never jumps
+    (unless the pianist flipped to another page); a lookup result on another page than the one showing must be
+    strong (unless flipped there, or the next page just after a pause); re-finds prefer the copy just ahead of where
+    the pianist was; turns wait while `racing` (the last second moved over 1.2x the pace of the 2 s before). After losing them, the closest good place within 3 s of where they were wins. Sections: `sectionsOf`, `addSection` (drops sections the new one
     `covers`: its opening and ending found in the new one at cost ≤ 0.08, in order, about the right length),
     `flatten` (sections end to end; tracking and search never cross a section boundary).
   - `search.js`: subsequence DTW over a coarse copy of the lesson (groups of 4 frames).
-  - `xml.js`: small XML parser. `score.js`: reads MusicXML/.mxl (fflate unzips) into measures (notes in quarters,
+  - `xml.js`: small XML parser. `score.js`: reads MusicXML/.mxl (notes carry `part`; `parts` lists names and staves;
+    `keepParts`, `withPageStarts` for typed page-start bar numbers, `parsePageStarts`, `barNumbers`) (fflate unzips) into measures (notes in quarters,
     page and system from `<print new-page/new-system>`, repeats, endings, segno/coda, D.C./D.S./Fine from `<sound>` or
-    words, including OCR-garbled "al Fine"; parts are merged) and `playOrder` (unfolding). Audiveris exports no measure
+    words, including OCR-garbled "al Fine") and `playOrder` (unfolding). Audiveris exports no measure
     widths, and may split a piano into extra parts, so staves per system come from the image.
   - `synth.js`: additive piano-like synth. `scorelesson.js`: score → synthesized audio (22.05 kHz, faint hiss so the
     noise learner works) → features → a section with `fromScore`, `measure` per frame and page turns half a beat
-    before each new page. Score sections match real playing less closely (fit about 0.35–0.6 of the background versus
+    a beat before each new page (`leadBeats`), after a quiet 1.5 s lead-in; `played` per frame (played-order index)
+    and the app stores `order` (played index → measure). Score sections match real playing less closely (fit about 0.35–0.6 of the background versus
     about 0.15 for taught), so they have their own limits (`FOLLOW_SETTINGS.score`).
   - `layout.js`: finds staves (ink peaks, five evenly spaced lines scored by ink), systems (count from the score,
     staves per system by spacing), barlines (solid through every staff, credit for crossing the gap; best-spaced set)
-    and returns measure boxes as page fractions.
+    and returns measure boxes as page fractions. `findMeasuresByCount` (bar-number mode, and the fallback when the
+    file's systems don't fit): only the page's measure count is known; staves of a size, systems by gaps, and each
+    system's count chosen by dynamic programming over barline clarity plus a share-by-width prior.
   - `hearing.js`: the "Hearing" note display.
 - `audio/capture-worklet.js` (audio thread) → `listen.js` (`Microphone`) → `FeatureExtractor`.
 - `store.js`: IndexedDB on the device: lessons keyed by PDF fingerprint plus page count, and the last opened PDF.
@@ -144,23 +167,29 @@ Steps are numbered across phases, in order. Work through them in that order unle
     tests/output/perf`: 18 practice sessions (start mid-piece with and without flipping, repeats, jump back with and
     without a flip, skip ahead, a repeated section, back over a page turn, fast, slow, noisy, and noodling: F-sharp
     pentatonic, plus scales, random notes, chords and a made-up tune in the piece's key, and a warm-up before
-    starting). Currently found within 4 s after 33/34 restarts (about 0.8 s typically), 19/20 page breaks on time,
+    starting). Currently found within 4 s after 44/45 restarts (about 0.8 s typically), 31/32 page breaks on time,
     0 stray page changes; the misses are the known identical-copy case (p_jump_back).
   - `python3 tools/synth_performances.py tests/output/perf --sections` then `node tests/sections-eval.js
     tests/output/perf`: teaching in sections (replacement, three overlapping sections, out of order, an untaught gap,
-    practice sessions with sections). Currently 15/15.
+    practice sessions with sections). Currently all pass (14/14 found, 10/10 turns).
   - `node tests/score-unit.js`: reading MusicXML and play order (repeats, endings, D.C., D.S. al Coda, ties, voices).
   - `python3 tools/make_test_scores.py tests/output/scores`: the A A B A piece written with repeats (3 pages) and with
     D.C. al Fine (2 pages) as MusicXML and PDF, and a performance of the sample score. Then run Audiveris on the PDFs
     into `tests/output/scores/omr/` and `node tests/score-eval.js` (follow the A A B A performances from the scores and
-    from Audiveris's readings; currently 29/29) and `node tests/layout-eval.js` (measures found on every page).
+    from Audiveris's readings, bar numbers 5, 13 on the repeat version, and a duet with an orchestra part and 8 bars
+    where the piano rests, followed with the solo part only; currently all pass) and `node tests/layout-eval.js`
+    (measures found on every page, also in bar-number mode against counts read off the pages by eye).
+  - `python3 tools/synth_performances.py tests/output/perf --rondo`, the rondo in `make_test_scores.py` (A B A C A B A,
+    one section per page) and Audiveris on `aba_rondo.pdf`, then `node tests/rondo-eval.js`: refrains on many pages.
+    Currently 42/42 turns on time, 0 stray, highlight on the right measure 98% (always within one).
   - Audiveris in this container: `git clone https://github.com/Audiveris/audiveris`, comment out `javax.media:jai-core`
     in `app/build.gradle` (unreachable here, unused), `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64 ./gradlew
     :app:installDist` (apt `openjdk-25-jdk-headless`), and for text (D.C., Fine) `TESSDATA_PREFIX` pointing at
     `eng.traineddata` from tesseract-ocr/tessdata tag 4.1.0. Run: `app/build/install/app/bin/Audiveris -batch -export
     -output OUT file.pdf`.
   - `NODE_PATH="$(npm root -g)" node tests/score-follow.cjs`: real browser, `tests/fixtures/aba_dc.pdf` plus Audiveris's
-    `aba_dc.mxl`, no teaching: turns to page 2 and back for the D.C., measure highlight shown.
+    `aba_dc.mxl`, no teaching: turns to page 2 and back for the D.C., measure highlight shown, then bar numbers typed,
+    applied and kept after a reload.
   - `python3 tools/synth_performances.py tests/output/short --short` then
     `NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs`: real-browser Teach, Follow and Practice with a fake
     microphone (about 2.5 minutes).

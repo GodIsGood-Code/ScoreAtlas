@@ -21,11 +21,16 @@ function staffLines(gray, w, h) {
   const lines = [];
   const limit = 0.12 * w; // short last systems have short staff lines
   for (let y = 1; y < h - 1; y++) {
-    if (rows[y] < limit || rows[y] < rows[y - 1] || rows[y] < rows[y + 1]) continue;
+    if (rows[y] < rows[y - 1] || rows[y] < rows[y + 1]) continue;
     const a = rows[y - 1], b = rows[y], c = rows[y + 1];
+    if (b + Math.max(a, c) < limit) continue; // a thin line may be shared between two rows of pixels
     const centre = y + (c - a) / (2 * Math.max(1e-6, 2 * b - a - c)) * 0.5;
-    if (lines.length && centre - lines[lines.length - 1].y < 2) continue;
-    lines.push({ y: centre, ink: b + Math.max(a, c) });
+    const line = { y: centre, ink: b + Math.max(a, c) };
+    if (lines.length && centre - lines[lines.length - 1].y < 2) {
+      if (line.ink > lines[lines.length - 1].ink) lines[lines.length - 1] = line; // keep the stronger of two close peaks
+      continue;
+    }
+    lines.push(line);
   }
   return lines;
 }
@@ -72,6 +77,7 @@ function staves(lines) {
   const strong = kept[0].score;
   return kept
     .filter((k) => k.score >= 0.15 * strong) // short systems have short (weak) lines; text can't make five even lines
+    .filter((k) => k.space >= 0.6 * kept[0].space && k.space <= 1.4 * kept[0].space) // staves on a page are of a size
     .map((k) => ({ top: k.top, bottom: k.bottom, space: k.space, score: k.score, strong: k.score >= 0.35 * strong,
       lines: [0, 1, 2, 3, 4].map((q) => k.top + q * k.space) }));
 }
@@ -158,6 +164,7 @@ function chooseBarlines(cands, want, left, right) {
   for (let q = want - 1; q < cands.length; q++) if (best[want - 1][q] < b) { b = best[want - 1][q]; i = q; }
   const picked = [];
   for (let k = want - 1; k >= 0; k--) { picked.unshift(cands[i]); i = from[k][i]; }
+  picked.cost = b;
   return picked;
 }
 
@@ -224,4 +231,78 @@ export function systemCounts(score) {
     p[m.system - 1] = (p[m.system - 1] || 0) + 1;
   }
   return pages;
+}
+
+// When only the number of measures on the page is known (pages given by bar numbers, from the pianist's edition):
+// find the systems from the staves' spacing, then keep the strongest barlines until the count is right.
+export function findMeasuresByCount(gray, w, h, total) {
+  // real staves are several line-spaces apart: drop a weaker "staff" squeezed against a stronger one
+  const found = staves(staffLines(gray, w, h));
+  const all = [];
+  for (const st of found) {
+    if (all.some((k) => st.top < k.bottom + 3 * k.space && st.bottom > k.top - 3 * k.space)) continue;
+    all.push(st);
+  }
+  all.sort((a, b) => a.top - b.top);
+  if (!all.length || total <= 0) return null;
+  // staves per system: staves of a system are clearly closer together than staves of different systems
+  const gaps = all.slice(1).map((st, i) => st.top - all[i].bottom);
+  let per = 1;
+  for (const p of [2, 3, 4]) {
+    if (all.length % p || all.length / p < 2) continue;
+    const within = gaps.filter((_, i) => (i + 1) % p !== 0), between = gaps.filter((_, i) => (i + 1) % p === 0);
+    if (Math.max(...within) < 0.8 * Math.min(...between)) { per = p; break; }
+  }
+  if (all.length === 2 && gaps[0] < 8 * all[0].space) per = 2; // a single piano system on the page
+  const systems = [];
+  for (let i = 0; i < all.length; i += per) {
+    const st = all.slice(i, i + per);
+    const ext = st.map((x) => extent(gray, w, x));
+    systems.push({ staves: st, left: Math.min(...ext.map((e) => e.left)), right: Math.max(...ext.map((e) => e.right)) });
+  }
+  if (total < systems.length) return null;
+  // How many measures in each system? Measures are of similar width, so a system's share of the page's measures
+  // roughly follows its width; within that, pick the split whose barlines are clearest and most evenly spaced
+  const widths = systems.map((x) => x.right - x.left);
+  const sum = widths.reduce((x, y) => x + y, 0);
+  const inner = systems.map((sys) => {
+    const sp = sys.staves[0].space;
+    return barlines(gray, w, sys).filter((b) => b.x0 > sys.left + 4 * sp && b.x1 < sys.right - 4 * sp);
+  });
+  const costOf = systems.map((sys, k) => {
+    const raw = (widths[k] / sum) * total;
+    return (c) => {
+      const chosen = chooseBarlines(inner[k], c - 1, sys.left, sys.right);
+      const fit = chosen ? (chosen.cost || 0) : 2 * (c - 1); // missing barlines cost more than weak ones
+      return fit + 0.6 * Math.abs(c - raw);
+    };
+  });
+  // dynamic programming over systems: best[k][n] = lowest cost giving n measures to the first k systems
+  let best = new Map([[0, { cost: 0, counts: [] }]]);
+  systems.forEach((sys, k) => {
+    const next = new Map();
+    const left = systems.length - k - 1;
+    for (const [n, v] of best) {
+      for (let c = 1; n + c + left <= total; c++) {
+        const cost = v.cost + costOf[k](c);
+        const m = n + c;
+        if (!next.has(m) || next.get(m).cost > cost) next.set(m, { cost, counts: [...v.counts, c] });
+      }
+    }
+    best = next;
+  });
+  if (!best.has(total)) return null;
+  const counts = best.get(total).counts;
+  const boxes = [];
+  systems.forEach((sys, k) => {
+    const chosen = chooseBarlines(inner[k], counts[k] - 1, sys.left, sys.right);
+    let xs;
+    if (chosen) xs = chosen.map((c) => (c.x0 + c.x1) / 2);
+    else xs = Array.from({ length: counts[k] - 1 }, (_, i) => sys.left + ((sys.right - sys.left) * (i + 1)) / counts[k]);
+    const edges = [sys.left, ...xs, sys.right];
+    const st = sys.staves, pad = 1.5 * st[0].space;
+    const y0 = Math.max(0, st[0].top - pad), y1 = Math.min(h, st[st.length - 1].bottom + pad);
+    for (let i = 0; i + 1 < edges.length; i++) boxes.push({ x0: edges[i] / w, y0: y0 / h, x1: edges[i + 1] / w, y1: y1 / h, exact: !!chosen });
+  });
+  return boxes;
 }

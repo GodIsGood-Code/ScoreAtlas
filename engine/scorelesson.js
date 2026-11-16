@@ -10,7 +10,7 @@ import { synthesize } from "./synth.js";
 
 export const SCORE_SETTINGS = {
   sampleRate: 22050,
-  leadBeats: 0.5, // turn the page this many beats before the new page starts (on top of the follower's own lead)
+  leadBeats: 1, // turn the page this many beats before the new page starts (on top of the follower's own lead)
 };
 
 export function scoreSection(score, settings = SCORE_SETTINGS) {
@@ -21,9 +21,9 @@ export function scoreSection(score, settings = SCORE_SETTINGS) {
   const audio = synthesize(notes, settings.sampleRate);
   const frames = [];
   const fx = new FeatureExtractor(settings.sampleRate, (f) => frames.push(f));
-  // Half a second of quiet first, so the extractor learns the room, and a faint hiss throughout like any real
+  // Quiet first, so the extractor learns the room, and a faint hiss throughout like any real
   // recording (pure digital silence would make the extractor take the music itself for the room's background)
-  const offset = 0.5;
+  const offset = 1.5; // well past the extractor's half second of learning the room (its first frame comes 0.1 s in)
   const lead = Math.round(offset * settings.sampleRate);
   const all = new Float32Array(lead + audio.length);
   all.set(audio, lead);
@@ -55,7 +55,11 @@ export function scoreSection(score, settings = SCORE_SETTINGS) {
   });
   const section = makeLesson(frames, turns, { startPage: pageOf(0), fromScore: true, taughtAt: Date.now() });
   section.measure = new Int16Array(section.length);
-  for (let j = 0; j < section.length; j++) section.measure[j] = order[playedAt[section.source[j]]];
+  section.played = new Int16Array(section.length); // the played-order index (repeats counted twice)
+  for (let j = 0; j < section.length; j++) {
+    section.played[j] = playedAt[section.source[j]];
+    section.measure[j] = order[section.played[j]];
+  }
   delete section.source;
   return section;
 }

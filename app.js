@@ -7,9 +7,10 @@ import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
-import { readScore } from "./engine/score.js";
+import { readScore, keepParts, withPageStarts, parsePageStarts, playOrder } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
-import { findMeasures, systemCounts } from "./engine/layout.js";
+import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
+import { MeasureMarker } from "./engine/marker.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
@@ -20,10 +21,12 @@ const fileName = $("fileName"), fileInput = $("fileInput");
 const card = $("card"), helpBtn = $("helpBtn"), keysSeen = $("keysSeen");
 const teachBtn = $("teachBtn"), followBtn = $("followBtn"), micBtn = $("micBtn"), forgetBtn = $("forgetBtn");
 const scoreBtn = $("scoreBtn"), scoreInput = $("scoreInput");
+const scoreOpts = $("scoreOpts"), partsBox = $("partsBox"), partsList = $("partsList"), barsInput = $("barsInput"), applyBtn = $("applyBtn");
 // the measure highlight, drawn over the page
 const marker = document.createElement("div");
 marker.className = "measure-mark";
 marker.hidden = true;
+const smoother = new MeasureMarker(FRAME_RATE / 2); // drawn every other frame
 const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
 const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
@@ -286,6 +289,7 @@ function stopMode() {
   mode = "idle";
   follower = null;
   marker.hidden = true;
+  smoother.reset();
   releaseMic();
   updateButtons();
   updateModebar();
@@ -350,6 +354,7 @@ function updateButtons() {
   followBtn.disabled = !state.lesson || mode === "teach";
   followBtn.title = state.lesson ? "" : "Add this piece's sheet music or teach it first";
   scoreBtn.disabled = !state.pdf || mode !== "idle";
+  applyBtn.disabled = mode !== "idle";
   micBtn.textContent = micCheck ? "Stop" : "Check microphone";
   micBtn.setAttribute("aria-pressed", String(micCheck));
 }
@@ -373,13 +378,55 @@ function updateLessonInfo() {
   }
   if (!state.pdf) el.textContent = "";
   else el.textContent = parts.length ? parts.join(" ") : "This piece has no sheet music and hasn't been taught yet.";
+  showScoreOptions(fromScore);
 }
 
+// Sheet music options: which parts the pianist plays, and the first bar of each page of their own edition
+function showScoreOptions(section) {
+  const can = !!(section && section.scoreFile);
+  scoreOpts.hidden = !can;
+  if (!can) return;
+  const opts = section.options || {};
+  const parts = section.partList || [];
+  partsBox.hidden = parts.length < 2;
+  partsList.textContent = "";
+  parts.forEach((p, i) => {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = String(i);
+    box.checked = !opts.parts || !opts.parts.length || opts.parts.includes(i);
+    const staves = p.staves > 1 ? ` (${p.staves} staves)` : "";
+    label.append(box, ` ${p.name || `Part ${i + 1}`}${staves}`);
+    partsList.append(label);
+  });
+  barsInput.value = (opts.pageStarts || []).join(", ");
+}
+applyBtn.addEventListener("click", () => {
+  const section = sectionsOf(state.lesson).find((s) => s.fromScore);
+  if (!section || !section.scoreFile) return;
+  const boxes = [...partsList.querySelectorAll("input")];
+  const chosen = boxes.filter((b) => b.checked).map((b) => Number(b.value));
+  const parts = chosen.length && chosen.length < boxes.length ? chosen : null;
+  const pageStarts = parsePageStarts(barsInput.value);
+  addScore(section.scoreFile, section.name, { parts, pageStarts });
+  backToMusic();
+});
+
 // The measure being played, highlighted on the page (when the piece has sheet music)
+// The follower's position wobbles a little, so the highlight is smoothed (see engine/marker.js)
+let movesSeen = 0;
 function drawMarker() {
   const f = follower && follower.lesson;
   const canvas = sheet.querySelector("canvas");
-  const m = f && follower.status === "following" && !follower.unsure ? f.measure[follower.position] : -1;
+  const sure = f && follower.status === "following" && !follower.unsure;
+  const moves = follower ? follower.moves || 0 : 0;
+  let m = -1;
+  if (f && f.order) { // smoothed, in the order the measures are played
+    const shown = smoother.update(sure ? f.played[follower.position] : -1, moves !== movesSeen);
+    m = shown >= 0 ? f.order[shown] : -1;
+  } else if (sure) m = f.measure[follower.position]; // sheet music added in Test 7
+  movesSeen = moves;
   const box = m >= 0 && f.layout ? f.layout[m] : null;
   if (!box || box.page !== state.page || !canvas) { marker.hidden = true; return; }
   marker.style.left = `${canvas.offsetLeft + box.x0 * canvas.offsetWidth}px`;
@@ -411,44 +458,60 @@ async function pageImage(n) {
   return out;
 }
 
-// Add the piece's sheet music (MusicXML from Audiveris): read it, find its measures on the PDF's pages, and learn
-// how it sounds, so Follow works without teaching
-async function addScore(file) {
+// Add the piece's sheet music (MusicXML from Audiveris, or from anywhere): read it, find its measures on the PDF's
+// pages, and learn how it sounds, so Follow works without teaching. Options: parts = the parts the pianist plays
+// (the others are left out of what the app listens for); pageStarts = the first bar of each page from page 2, for
+// sheet music whose pages don't match the PDF (the measures are then found on the PDF by counting barlines).
+async function addScore(bytes, name, options = {}) {
   if (!state.pdf || mode !== "idle") return;
-  scoreBtn.disabled = true;
+  scoreBtn.disabled = applyBtn.disabled = true;
   try {
     setStatus("Reading the sheet music…");
     await breathe();
-    const score = readScore(new Uint8Array(await file.arrayBuffer()));
-    const counts = systemCounts(score);
+    const full = readScore(bytes);
+    let score = keepParts(full, options.parts);
+    const byBars = !!(options.pageStarts && options.pageStarts.length);
+    if (byBars) score = withPageStarts(score, options.pageStarts);
+    if (!score.measures.some((m) => m.notes.length)) throw new Error("the parts you chose have no notes.");
+    const counts = byBars ? {} : systemCounts(score);
     const layout = new Array(score.measures.length).fill(null);
-    for (const page of Object.keys(counts).map(Number)) {
-      if (page > state.count) continue;
+    for (let page = 1; page <= Math.min(score.pages, state.count); page++) {
+      const here = score.measures.map((m, i) => (m.page === page ? i : -1)).filter((i) => i >= 0);
+      if (!here.length) continue;
       setStatus(`Finding the measures on page ${page} of ${score.pages}…`);
       await breathe();
       const img = await pageImage(page);
-      const boxes = findMeasures(img.gray, img.w, img.h, counts[page]);
+      let boxes = counts[page] ? findMeasures(img.gray, img.w, img.h, counts[page]) : null;
+      if (!boxes) boxes = findMeasuresByCount(img.gray, img.w, img.h, here.length);
       if (!boxes) continue;
-      const here = score.measures.map((m, i) => (m.page === page ? i : -1)).filter((i) => i >= 0);
       here.forEach((mi, k) => { if (boxes[k]) layout[mi] = { page, x0: boxes[k].x0, y0: boxes[k].y0, x1: boxes[k].x1, y1: boxes[k].y1 }; });
     }
     setStatus("Learning how the music sounds…");
     await breathe();
     const section = scoreSection(score);
-    Object.assign(section, { layout, measures: score.measures.length, pages: score.pages, name: file.name });
+    Object.assign(section, {
+      layout, measures: score.measures.length, pages: score.pages, name,
+      order: Int16Array.from(playOrder(score)), // played-order index -> measure, for the highlight
+      scoreFile: bytes, options: { parts: options.parts || null, pageStarts: byBars ? options.pageStarts : [] },
+      partList: full.parts.map((p) => ({ name: p.name, staves: p.staves })),
+    });
     // replace any earlier sheet music; taught sections stay (they're used where they fit better)
     state.lesson = { version: 2, sections: [section, ...sectionsOf(state.lesson).filter((s) => !s.fromScore)] };
     setStatus(null);
     updateLessonInfo();
     updateButtons();
-    const mismatch = score.pages !== state.count ? ` Note: the sheet music has ${plural(score.pages, "page")}, the PDF ${plural(state.count, "page")}.` : "";
-    toast(`Sheet music ready: ${plural(score.measures.length, "measure")}. Tap Follow and play.${mismatch}`, 4500);
+    let note = "";
+    if (score.pages !== state.count) {
+      note = byBars
+        ? ` Note: your bar numbers give ${plural(score.pages, "page")}, the PDF has ${plural(state.count, "page")}.`
+        : ` Note: the sheet music has ${plural(score.pages, "page")}, the PDF ${plural(state.count, "page")}. If pages turn at the wrong places, type the first bar of each page under Sheet music options.`;
+    }
+    toast(`Sheet music ready: ${plural(score.measures.length, "measure")}. Tap Follow and play.${note}`, note ? 8000 : 4500);
     keepData();
     saveLesson(state.key, state.lesson).catch(() => toast("Couldn't save the sheet music on this iPad.", 3000));
   } catch (err) {
-    setStatus(`Couldn't use ${file.name}: ${err.message || err}`, "error");
+    setStatus(`Couldn't use ${name}: ${err.message || err}`, "error");
   } finally {
-    scoreBtn.disabled = false;
     updateButtons();
   }
 }
@@ -457,7 +520,9 @@ scoreInput.addEventListener("change", () => {
   const file = scoreInput.files && scoreInput.files[0];
   scoreInput.value = "";
   backToMusic();
-  if (file) addScore(file);
+  if (!file) return;
+  file.arrayBuffer().then((buf) => addScore(new Uint8Array(buf), file.name),
+    () => setStatus(`Couldn't read ${file.name}. If it's in iCloud, download it to the iPad first.`, "error"));
 });
 
 // Forget everything this piece learned (asks for a second tap first)
@@ -583,6 +648,7 @@ function keyLabel(e) {
 window.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (["Tab", "Shift", "Escape"].includes(e.key)) return;
+  if (e.target instanceof Element && e.target.closest("input[type=text], textarea")) return; // typing
   const onControl = e.target instanceof Element && e.target.closest("button, input, a");
   if (onControl && (e.key === " " || e.key === "Enter")) return; // keep buttons usable from a keyboard
   e.preventDefault();

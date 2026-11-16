@@ -31,9 +31,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 def written_piece(form):
     """music21 score of the test piece. form "repeat": pages A (repeated), B, A. form "dc": A (repeated, Fine), B (D.C.)."""
-    events, _, total = sp.build_score(False)
-    sections = {"A": 0, "B": 64, "A2": 96}  # first beat of each written section in the A A B A performance
-    plan = ["A", "B", "A2"] if form == "repeat" else ["A", "B"]
+    if form == "rondo":
+        events, _, total = sp.build_score("rondo")
+        sections = {f"S{k}": 32 * k for k in range(7)}  # written out in full: A B A C A B A, one section per page
+        plan = list(sections)
+    else:
+        events, _, total = sp.build_score(False)
+        sections = {"A": 0, "B": 64, "A2": 96}  # first beat of each written section in the A A B A performance
+        plan = ["A", "B", "A2"] if form == "repeat" else ["A", "B"]
     rh, lh = stream.PartStaff(), stream.PartStaff()
     for p, c in ((rh, clef.TrebleClef()), (lh, clef.BassClef())):
         p.append(c)
@@ -96,7 +101,7 @@ def render_pdf(xml_path, pdf_path):
     return tk.getPageCount()
 
 
-for form in ("repeat", "dc"):
+for form in ("repeat", "dc", "rondo"):
     sc = written_piece(form)
     xml = os.path.join(OUT, f"aba_{form}.musicxml")
     sc.write("musicxml", fp=xml)

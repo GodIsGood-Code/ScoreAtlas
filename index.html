@@ -18,7 +18,7 @@
     <header class="rail">
       <div class="ident">
         <span class="mark">Page Turner</span>
-        <span class="tag">Test 7</span>
+        <span class="tag">Test 8</span>
         <span class="file" id="fileName">Loading…</span>
       </div>
       <div class="controls">
@@ -44,12 +44,12 @@
     </main>
 
     <aside class="card" id="card" aria-label="Test steps">
-      <h2>Test 7: sheet music, no teaching needed</h2>
+      <h2>Test 8: steadier following, your own bar numbers, solo part</h2>
       <ol>
-        <li><b>On your Mac:</b> open the piece's PDF in Audiveris, let it read the music, and export it as <b>MusicXML</b> (an .mxl file). Send that file to the iPad (AirDrop or iCloud Drive).</li>
-        <li><b>Here:</b> open the same PDF, then tap <b>Add sheet music</b> below and pick the .mxl file.</li>
-        <li><b>Tap Follow</b> and play from anywhere. Pages should turn without teaching, and the measure you're playing is highlighted.</li>
-        <li>If a passage doesn't follow well, <b>Teach</b> still works as a backup, and taught sections are used where they fit better.</li>
+        <li><b>Run-through first:</b> open your piece, add its sheet music (or use what you added in Test 7), tap <b>Follow</b> and play it through. Repeated passages should stay on the page you're on, turns should come earlier, and the yellow highlight should move steadily.</li>
+        <li><b>Then practice moves:</b> stop and restart, go back a few bars, skip ahead, play a bit of something else.</li>
+        <li><b>Sheet music from elsewhere</b> (MuseScore, say): tap <b>Add sheet music</b>, pick the file, then under <b>Sheet music options</b> type the first bar number of each page of <i>your</i> PDF, starting with page 2, and tap <b>Apply</b>.</li>
+        <li><b>Pieces with orchestra or other players:</b> under <b>Parts I play</b>, keep only your part ticked and tap <b>Apply</b>.</li>
       </ol>
       <div class="lesson-row">
         <p class="lesson" id="lessonInfo"></p>
@@ -59,6 +59,18 @@
         <button id="scoreBtn" class="btn small" type="button">Add sheet music</button>
         <input id="scoreInput" type="file" accept=".mxl,.musicxml,.xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
       </div>
+      <section class="score-opts" id="scoreOpts" hidden aria-label="Sheet music options">
+        <h3>Sheet music options</h3>
+        <fieldset id="partsBox" hidden>
+          <legend>Parts I play</legend>
+          <div class="parts" id="partsList"></div>
+          <p class="note">Untick only parts that other players play. Audiveris sometimes splits a piano into two parts; keep both.</p>
+        </fieldset>
+        <label class="field" for="barsInput">First bar on each page, from page 2</label>
+        <input id="barsInput" type="text" inputmode="numeric" autocomplete="off" placeholder="for example 12, 27, 41">
+        <p class="note">Only needed when the sheet music came from somewhere else or its pages don't match your PDF. Leave empty to use the sheet music's own pages.</p>
+        <div class="actions"><button id="applyBtn" class="btn small" type="button">Apply</button></div>
+      </section>
       <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
 
       <section class="ear" aria-label="Notes the app hears">

@@ -37,6 +37,9 @@ export function readScore(input) {
   if (root.name === "score-timewise") throw new Error("This MusicXML layout (timewise) isn't supported yet.");
   if (root.name !== "score-partwise") throw new Error("This doesn't look like a MusicXML file.");
   const parts = children(root, "part");
+  const partNames = {};
+  for (const sp of children(child(root, "part-list"), "score-part")) partNames[sp.attrs.id] = textOf(sp, "part-name") || "";
+  const partInfo = [];
   if (!parts.length) throw new Error("This MusicXML file has no music in it.");
   const title = textOf(child(root, "work"), "work-title") || textOf(root, "movement-title") || "";
 
@@ -96,7 +99,7 @@ export function readScore(input) {
                 open.get(key).length += length; // a tied note keeps sounding: no new attack
                 if (!ties.includes("start")) open.delete(key);
               } else {
-                const note = { midi: Math.round(midi), start: start / divisions, length, measure: mi };
+                const note = { midi: Math.round(midi), start: start / divisions, length, measure: mi, part: pi };
                 m.notes.push(note);
                 if (ties.includes("start")) open.set(key, note);
               }
@@ -141,8 +144,10 @@ export function readScore(input) {
       if (pi === 0) { m.page = page; m.system = system; }
     });
     stavesPerSystem += staves;
+    const notes = measures.reduce((n, m) => n + m.notes.filter((x) => x.part === pi).length, 0);
+    partInfo.push({ id: part.attrs.id || `P${pi + 1}`, name: partNames[part.attrs.id] || "", staves, notes });
   });
-  return { title, measures, pages: measures.length ? measures[measures.length - 1].page : 0, stavesPerSystem };
+  return { title, measures, parts: partInfo, pages: measures.length ? measures[measures.length - 1].page : 0, stavesPerSystem };
 }
 
 function markSound(m, s) {
@@ -257,4 +262,35 @@ export function timeline(score, order, defaultTempo = 90) {
     for (let j = 0; j <= k; j++) if (score.measures[order[j]].tempo > 0) tp = score.measures[order[j]].tempo;
     return tp;
   } };
+}
+
+// Only the notes of the parts the pianist plays (part indices; null or empty keeps every part)
+export function keepParts(score, parts) {
+  if (!parts || !parts.length) return score;
+  const keep = new Set(parts);
+  return { ...score, measures: score.measures.map((m) => ({ ...m, notes: m.notes.filter((n) => keep.has(n.part)) })) };
+}
+
+// The bar number a measure carries (repeated or unnumbered measures take the last number seen)
+export function barNumbers(score) {
+  let last = 0;
+  return score.measures.map((m) => {
+    const n = parseInt(m.number, 10);
+    if (Number.isFinite(n)) last = n;
+    return last;
+  });
+}
+
+// Pages from the pianist's own edition: starts = the first bar number on page 2, 3, ... Every measure gets the page
+// its bar number falls on; systems are then unknown (the measures are found on the page image instead).
+export function withPageStarts(score, starts) {
+  const sorted = starts.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
+  const bars = barNumbers(score);
+  const measures = score.measures.map((m, i) => ({ ...m, page: 1 + sorted.filter((s) => bars[i] >= s).length, system: 0 }));
+  return { ...score, measures, pages: 1 + sorted.length, pageStarts: sorted };
+}
+
+// "12, 27 41" -> [12, 27, 41]
+export function parsePageStarts(text) {
+  return (text.match(/\d+/g) || []).map(Number).filter((n) => n > 0);
 }
