@@ -16,20 +16,51 @@ language; the owner tests on their iPad and reports back.
 - Test 2 feedback from the owner: single notes without pedal were read well; pedaled chords with uneven voicing
   were not; the display felt slightly delayed. Test 1 was a claude.ai artifact (artifacts can't use the mic).
 
-## Plan agreed with the owner
+## Roadmap agreed with the owner
 
-1. **Basics:** PDF display, pedal and tap turns, mic check. Done.
-2. **Teach it once:** done in Test 3 and confirmed on the owner's piano.
-3. **Practice robustness:** built in Test 4; waiting for iPad feedback. Known limit: when the same music appears in
-   two places (a written-out repeat on another page) and the pianist jumps between them without flipping the page,
-   the follower may guess the copy on the page that's showing; it corrects itself a couple of seconds later, and a
-   page flip by the pianist settles it at once.
-4. **Reading the sheet music:** convert scans to MusicXML with an existing OMR tool (Audiveris, PlayScore 2,
-   Soundslice and similar), build the reference from the notes, and reuse the same follower. Handle repeats,
-   D.S. and codas. The owner definitely wants this step.
-5. **Release prep:** polish, offline use, App Store packaging (for example Capacitor), a look at competing apps.
+Steps are numbered across phases, in order. Work through them in that order unless the owner says otherwise.
 
-The owner has more features in mind after automatic page turning works.
+### Done so far
+
+1. **Basics:** PDF display, pedal and tap turns, microphone check.
+2. **Teach it once:** automatic page turns after one taught playthrough. Confirmed on the owner's piano (Test 3).
+3. **Practice mode (Test 4):** start anywhere, stops, repeats, jumps. Waiting for the owner's feedback.
+   Known limit: when the same music appears in two places (a written-out repeat on another page) and the pianist
+   jumps between them without flipping the page, the follower may guess the copy on the page that's showing; it
+   corrects itself a couple of seconds later, and a page flip by the pianist settles it at once.
+
+### Phase A: Reading the sheet music (the foundation)
+
+4. **Page turning without teaching.** Turn scans into notes with a reader that also records where each measure sits
+   on the page (for example an OMR tool with measure positions, such as Audiveris), build the follower's reference
+   from the notes, and handle repeats, D.S. and codas. Teach stays available as a backup for scans the reader
+   struggles with.
+5. **Measure highlighting.** Highlight the measure being played, live. Comes cheaply once step 4 gives measure
+   positions.
+
+### Phase B: Practice tools
+
+6. **Practice insights:** which bars were repeated most, and where the pianist hesitated.
+7. **Loop a passage:** mark some bars; the app counts repetitions and shows the tempo of each one.
+8. **Tempo graph:** tempo bar by bar after a run-through.
+9. **Record and replay:** play back a practice run with the measure highlight following along.
+10. **Wrong-note detection:** mark the notes that were missed. Needs a trained note-recognition model (for example
+    Spotify's Basic Pitch) plus the score from step 4.
+
+### Phase C: Everyday essentials and getting ready to release
+
+11. **Library and setlists.**
+12. **Annotations with Apple Pencil:** fingerings and markings.
+13. **Display options:** two pages side by side in landscape, half-page turns, and a performance lock against
+    accidental taps.
+14. **Offline mode:** works without Wi-Fi at a venue.
+15. **Release prep:** polish, App Store packaging (for example Capacitor), a look at competing apps, pricing.
+
+### Phase D: Accompaniment (last)
+
+16. **Accompaniment that follows the pianist:** duet partner, orchestra, or whatever the piece needs. Main problems
+    to solve: predicting the pianist's next beat (not just reacting to it), the iPad's audio delay, the microphone
+    hearing the app's own sound, and good-sounding instruments.
 
 ## Owner's setup
 
