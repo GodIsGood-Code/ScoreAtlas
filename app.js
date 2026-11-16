@@ -7,7 +7,7 @@ import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
-import { readScore, keepParts, withPageStarts, parsePageStarts, playOrder } from "./engine/score.js";
+import { readScore, keepParts, withPageStarts, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
 import { MeasureMarker } from "./engine/marker.js";
@@ -390,24 +390,38 @@ function showScoreOptions(section) {
   const parts = section.partList || [];
   partsBox.hidden = parts.length < 2;
   partsList.textContent = "";
-  parts.forEach((p, i) => {
+  const { mine, fragments } = suggestParts(parts);
+  const kept = (i) => !opts.parts || !opts.parts.length || opts.parts.includes(i);
+  const addBox = (indices, text) => {
     const label = document.createElement("label");
     const box = document.createElement("input");
     box.type = "checkbox";
-    box.value = String(i);
-    box.checked = !opts.parts || !opts.parts.length || opts.parts.includes(i);
-    const staves = p.staves > 1 ? ` (${p.staves} staves)` : "";
-    label.append(box, ` ${p.name || `Part ${i + 1}`}${staves}`);
+    box.value = indices.join(",");
+    box.checked = indices.every(kept);
+    label.append(box, ` ${text}`);
     partsList.append(label);
-  });
+  };
+  // the piano parts first, then the others by size; Audiveris's tiny misread bits as one line
+  const main = parts.map((p, i) => i).filter((i) => !fragments.includes(i))
+    .sort((x, y) => Number(!!(mine && mine.includes(y))) - Number(!!(mine && mine.includes(x))) || (parts[y].notes || 0) - (parts[x].notes || 0));
+  for (const i of main) {
+    const p = parts[i];
+    const bits = [p.staves > 1 ? `${p.staves} staves` : "", p.notes !== undefined ? plural(p.notes, "note") : ""].filter(Boolean).join(", ");
+    addBox([i], `${p.name || `Part ${i + 1}`}${bits ? ` (${bits})` : ""}${mine && mine.includes(i) ? " · piano" : ""}`);
+  }
+  if (fragments.length) {
+    const notes = fragments.reduce((n, i) => n + (parts[i].notes || 0), 0);
+    addBox(fragments, `${plural(fragments.length, "small bit")} split off by mistake (${plural(notes, "note")})`);
+  }
   barsInput.value = (opts.pageStarts || []).join(", ");
 }
 applyBtn.addEventListener("click", () => {
   const section = sectionsOf(state.lesson).find((s) => s.fromScore);
   if (!section || !section.scoreFile) return;
   const boxes = [...partsList.querySelectorAll("input")];
-  const chosen = boxes.filter((b) => b.checked).map((b) => Number(b.value));
-  const parts = chosen.length && chosen.length < boxes.length ? chosen : null;
+  const all = boxes.flatMap((b) => b.value.split(",").map(Number));
+  const chosen = boxes.filter((b) => b.checked).flatMap((b) => b.value.split(",").map(Number));
+  const parts = chosen.length && chosen.length < all.length ? chosen : null;
   const pageStarts = parsePageStarts(barsInput.value);
   addScore(section.scoreFile, section.name, { parts, pageStarts });
   backToMusic();
@@ -469,6 +483,8 @@ async function addScore(bytes, name, options = {}) {
     setStatus("Reading the sheet music…");
     await breathe();
     const full = readScore(bytes);
+    // new sheet music: start with the piano part(s) only, when there clearly are some
+    if (options.parts === undefined) options = { ...options, parts: suggestParts(full.parts).mine };
     let score = keepParts(full, options.parts);
     const byBars = !!(options.pageStarts && options.pageStarts.length);
     if (byBars) score = withPageStarts(score, options.pageStarts);
@@ -493,7 +509,7 @@ async function addScore(bytes, name, options = {}) {
       layout, measures: score.measures.length, pages: score.pages, name,
       order: Int16Array.from(playOrder(score)), // played-order index -> measure, for the highlight
       scoreFile: bytes, options: { parts: options.parts || null, pageStarts: byBars ? options.pageStarts : [] },
-      partList: full.parts.map((p) => ({ name: p.name, staves: p.staves })),
+      partList: full.parts.map((p) => ({ name: p.name, staves: p.staves, notes: p.notes })),
     });
     // replace any earlier sheet music; taught sections stay (they're used where they fit better)
     state.lesson = { version: 2, sections: [section, ...sectionsOf(state.lesson).filter((s) => !s.fromScore)] };

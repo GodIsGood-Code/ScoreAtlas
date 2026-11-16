@@ -271,6 +271,20 @@ export function keepParts(score, parts) {
   return { ...score, measures: score.measures.map((m) => ({ ...m, notes: m.notes.filter((n) => keep.has(n.part)) })) };
 }
 
+// Which parts the pianist probably plays, and which are tiny bits a reader like Audiveris split off by mistake.
+// mine: the piano parts (named so, or written on two or more staves) if they hold at least half the notes, else null
+// (keep everything); fragments: other parts with only a handful of notes.
+export function suggestParts(parts) {
+  const piano = parts.map((p, i) => (/piano|pno|klavier|keyboard|accomp|\bpf\b/i.test(p.name || "") || p.staves >= 2 ? i : -1)).filter((i) => i >= 0);
+  if (parts.some((p) => p.notes === undefined)) return { mine: piano.length ? piano : null, fragments: [] }; // no counts kept
+  const total = parts.reduce((n, p) => n + p.notes, 0);
+  const pianoNotes = piano.reduce((n, i) => n + (parts[i].notes || 0), 0);
+  const mine = piano.length && pianoNotes >= 0.5 * total ? piano : null;
+  const small = Math.max(12, 0.03 * total);
+  const fragments = parts.map((p, i) => (!piano.includes(i) && (p.notes || 0) < small ? i : -1)).filter((i) => i >= 0);
+  return { mine, fragments };
+}
+
 // The bar number a measure carries (repeated or unnumbered measures take the last number seen)
 export function barNumbers(score) {
   let last = 0;

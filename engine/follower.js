@@ -22,6 +22,8 @@ export const FOLLOW_SETTINGS = {
   silenceCost: 0.9, // cost of sound in one and silence in the other
   onsetWeight: 0.3, // how much "which notes were just struck" counts, versus "which notes sound"
   anticipation: 0.3, // seconds: turn this much before the moment the page was turned in the lesson
+  scoreLead: 0.5, // seconds more for turns learned from sheet music: the eyes read ahead of the hands (owner, Test 8)
+  farAgree: 1.2, // seconds that lookups must keep agreeing before a so-so match moves us to another page
   unsureCost: 0.25, // recent match cost above which the follower is unsure and holds turns
   searchBack: 30, // seconds behind the current position still tracked (keeps long pieces light)
   // Practice: finding the pianist anywhere in the piece
@@ -206,9 +208,23 @@ export class Follower {
       maxGap: s(settings.maxGap), pause: s(settings.pause), query: s(settings.queryLength), minQuery: s(settings.minQuery),
       searchEvery: s(settings.searchEvery), checkEvery: s(settings.checkEvery), jump: s(settings.jumpDistance),
       lost: s(settings.lostAfter), ahead: s(settings.anticipation), back: s(settings.searchBack), flip: s(settings.flipHint),
-      holdRelease: s(settings.holdRelease),
+      holdRelease: s(settings.holdRelease), scoreLead: s(settings.scoreLead || 0), farAgree: s(settings.farAgree),
     };
     this.flip = null;
+  }
+
+  // How far ahead of a page turn's moment the page is turned, in lesson frames. The lead is meant in the pianist's
+  // seconds, so it is scaled by their pace (lesson frames per live frame): playing slower than the lesson, the
+  // same lead covers less of the lesson.
+  aheadOf(t) {
+    return (this.frames.ahead + (this.lesson.fromScore[t.frame] ? this.frames.scoreLead : 0)) * this.pace();
+  }
+
+  // Lesson frames per live frame over the last few seconds of tracking (1 until there's enough to tell)
+  pace() {
+    const tr = this.trail, n = tr ? tr.length : 0;
+    if (n < 1.5 * FRAME_RATE) return 1;
+    return Math.min(2, Math.max(0.5, (tr[n - 1] - tr[0]) / (n - 1)));
   }
 
   // The match limits for lesson frame j (sheet-music sections have their own)
@@ -331,7 +347,7 @@ export class Follower {
     if (this.holdTurns || this.unsure || this.status !== "following" || this.racing()) { this.streak = 0; return; }
     while (this.turnIndex < turns.length) {
       const t = turns[this.turnIndex];
-      if (this.position >= t.frame - this.frames.ahead) {
+      if (this.position >= t.frame - this.aheadOf(t)) {
         if (++this.streak >= 2 && this.confirmed()) {
           this.turnIndex++;
           this.streak = 0;
@@ -401,11 +417,17 @@ export class Follower {
       if (this.expectJump) return d <= this.frames.jump ? -d : 1e6 + d;
       return d >= -this.frames.jump ? d : Infinity;
     };
+    // Once a lookup has picked one of the copies, later lookups stay with it while it still fits (otherwise the
+    // pick could flicker between copies and never settle)
+    const vote = this.farVote || this.pending;
+    const cont = (c) => (vote && Math.abs(c.frame - (vote.frame + this.clock - vote.clock)) <= this.frames.jump ? 0 : 1);
     for (const distance of [0, 1]) {
       const near = alike.filter((c) => Math.abs(this.pageAt[c.frame] - this.page) === distance);
-      if (near.length) return near.sort((a, b) => ahead(a) - ahead(b) || a.frame - b.frame)[0];
+      if (near.length) return near.sort((a, b) => cont(a) - cont(b) || ahead(a) - ahead(b) || a.frame - b.frame)[0];
     }
-    return null;
+    // None on or next to the page showing: the pianist jumped without turning the page. The earliest copy is the
+    // best guess (moving there still takes lookups agreeing for a while; a page flip corrects it at once)
+    return alike.sort((a, b) => cont(a) - cont(b) || a.frame - b.frame)[0];
   }
 
   enoughToLookUp() {
@@ -449,10 +471,20 @@ export class Follower {
     // (After a pause a restart is expected, and going back over a page turn is common: the next page either way is fine.)
     const pageGap = Math.abs(this.pageAt[pick.frame] - this.page);
     const otherPage = pageGap > 0 && !(this.flip && this.pageAt[pick.frame] === this.flip.page) && !(this.expectJump && pageGap === 1);
-    if (otherPage && !strong) { this.pending = null; return; }
+    if (otherPage && !strong) {
+      // ... unless lookups keep agreeing on that place for a while: then the pianist really is there (they jumped
+      // without turning to the page)
+      const fv = this.farVote, F = this.frames;
+      const agreesFar = fv && Math.abs(pick.frame - (fv.frame + (this.clock - fv.clock))) <= F.jump;
+      this.farVote = { frame: pick.frame, clock: this.clock, since: agreesFar ? fv.since : this.clock };
+      this.pending = null;
+      if (agreesFar && this.clock - this.farVote.since >= F.farAgree && pick.cost <= this.limits(pick.frame).goodRatio * background) this.moveTo(pick.frame);
+      return;
+    }
+    this.farVote = null;
     const agrees = this.pending && Math.abs(this.pending.frame - pick.frame) <= this.frames.jump;
     if (strong || agrees) this.moveTo(pick.frame);
-    else this.pending = pick;
+    else this.pending = { ...pick, clock: this.clock };
   }
 
   // We think we know where the pianist is: check that nowhere else fits much better
@@ -527,11 +559,12 @@ export class Follower {
     this.status = "following";
     this.flip = null;
     this.pending = null;
+    this.farVote = null;
     this.verdict = null;
     this.misfit = 0;
     this.lostAt = null;
     const turns = this.lesson.turns;
-    this.turnIndex = turns.findIndex((t) => t.frame - this.frames.ahead > j);
+    this.turnIndex = turns.findIndex((t) => t.frame - this.aheadOf(t) > j);
     if (this.turnIndex < 0) this.turnIndex = turns.length;
     this.show(this.pageAt[j], "jump");
   }
@@ -541,7 +574,7 @@ export class Follower {
     this.page = page;
     const turns = this.lesson.turns;
     // skip any automatic turn that is due now or very soon: the pianist took care of it
-    while (this.turnIndex < turns.length && turns[this.turnIndex].frame <= this.position + 3 * this.frames.ahead) this.turnIndex++;
+    while (this.turnIndex < turns.length && turns[this.turnIndex].frame <= this.position + 3 * this.aheadOf(turns[this.turnIndex])) this.turnIndex++;
     // a flip away from where we think they are probably means they're about to play from there
     if (this.pageAt[this.position] !== page) {
       this.expectJump = true;

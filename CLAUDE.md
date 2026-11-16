@@ -6,7 +6,21 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 8 (current):** fixes from the owner's Test 7 feedback plus two features they asked for. Feedback: "works
+- **Test 9 (current):** fixes from the owner's Test 8 run (Encourage One Another, a piano accompaniment with a
+  two-part choir, scanned with Genius Scan; Audiveris split the choir into 12 parts with garbled names, which made
+  "Parts I play" confusing; with only Piano ticked it followed much better; turns felt late; page 2 and 8 trouble;
+  slow to find them after skipping in practice). Their recording showed the run-through tracked to within about
+  0.1 s, but they lingered on the last bar of pages waiting for the turn (eyes read ahead of the hands). Fixes:
+  piano parts ticked by default (`suggestParts`: named piano or 2+ staves, if they hold half the notes) and tiny
+  misread parts grouped as one line, with note counts; sheet-music turns 0.5 s earlier (`scoreLead`) and the turn
+  lead scaled by the pianist's pace (`pace()`); layout works on crooked phone scans (barlines may drift 2 px between
+  staves, two-pixel-wide grey barlines, the staff's real top and bottom line found at each column, outer lines at
+  their real positions, title text no longer taken for a staff) — all 10 pages exact now, was about half; practice:
+  when copies of the music exist only on far pages, the earliest is picked instead of none, picks stay with the
+  copy already chosen, and lookups agreeing for 1.2 s (`farAgree`) move to another page without a flip.
+  `tests/real-eval.js` follows a real recording with offline-aligned truth (run-through plus practice sessions cut
+  from it, with and without page flips); the owner's files are never committed.
+- **Test 8:** fixes from the owner's Test 7 feedback plus two features they asked for. Feedback: "works
   pretty decent", but with passages that recur through the piece it jumped to other copies; turns sometimes came late
   enough that they had to pause; the highlight lagged and jumped back and forth; they couldn't try practice moves
   because the run-through had trouble. Fixes: common-sense rules (while the tracker matches well it never jumps; a

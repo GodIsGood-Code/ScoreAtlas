@@ -1,5 +1,5 @@
 // Unit checks of reading MusicXML and the order measures are played in.  node tests/score-unit.js
-import { readScore, playOrder, keepParts, withPageStarts, parsePageStarts } from "../engine/score.js";
+import { readScore, playOrder, keepParts, withPageStarts, parsePageStarts, suggestParts } from "../engine/score.js";
 
 // A one-staff score; each measure: { notes: "C4 D4" (quarters), marks: MusicXML to put first, end: MusicXML to put last }
 function xml(measures, { divisions = 1 } = {}) {
@@ -70,4 +70,8 @@ check("al Fine with the Fine not read: stop at the repeat sign", order([{ marks:
   check("reading typed bar numbers", parsePageStarts("12, 27 41;  60"), [12, 27, 41, 60]);
   check("page turns from bar numbers", playOrder(paged).map((i) => paged.measures[i].page), [1, 1, 2, 2]);
 }
+// Which parts the pianist plays: the piano (by name or two staves), and tiny misread bits grouped
+check("piano suggested among choir parts", suggestParts([{ name: "Part I", staves: 1, notes: 97 }, { name: "l ;", staves: 1, notes: 7 }, { name: "Piano", staves: 2, notes: 960 }]), { mine: [2], fragments: [1] });
+check("a two-staff part counts as piano", suggestParts([{ name: "", staves: 2, notes: 300 }, { name: "Orchestra", staves: 1, notes: 200 }]).mine, [0]);
+check("no clear piano: keep everything", suggestParts([{ name: "Flute", staves: 1, notes: 300 }, { name: "Piano", staves: 2, notes: 100 }]).mine, null);
 process.exit(fails ? 1 : 0);

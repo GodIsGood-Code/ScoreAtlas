@@ -42,13 +42,14 @@ function follow(lesson, wav, startPage = 1) {
   return changes;
 }
 
-// Each expected turn: the new page should show between 2 s before and 0.3 s after the moment that page's music starts
+// Each expected turn: the new page should show between 2.6 s before and 0.3 s after the moment that page's music starts
+// (sheet-music turns come about a second early on purpose: the eyes read ahead of the hands)
 function judge(changes, expected) {
   const out = expected.map(({ t, page }) => {
-    const hit = changes.find((c) => c.page === page && c.t >= t - 2 && c.t <= t + 0.3);
+    const hit = changes.find((c) => c.page === page && c.t >= t - 2.6 && c.t <= t + 0.3);
     return hit ? hit.t - t : null;
   });
-  const extra = changes.filter((c) => !expected.some(({ t, page }) => c.page === page && c.t >= t - 2 && c.t <= t + 0.3));
+  const extra = changes.filter((c) => !expected.some(({ t, page }) => c.page === page && c.t >= t - 2.6 && c.t <= t + 0.3));
   return { errs: out, extra };
 }
 const fmt = (errs) => errs.map((e) => (e === null ? "missed" : `${e >= 0 ? "+" : ""}${e.toFixed(2)}s`)).join(", ");

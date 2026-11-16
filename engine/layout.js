@@ -57,13 +57,17 @@ function staves(lines) {
       for (let at = 0; at < 2; at++) {
         const top = ys[i] - at * sp;
         let missing = 0, ink = 0;
+        const found = [];
         for (let k = 0; k <= 4; k++) {
           const j = k === at ? i : near(top + k * sp, 0.22 * sp);
           if (j < 0) { missing++; continue; }
           ink += lines[j].ink;
+          found[k] = ys[j];
         }
         if (missing > 1) continue;
-        candidates.push({ top, bottom: top + 4 * sp, space: sp, score: ink * (missing ? 0.7 : 1) });
+        // the spacing was tried in whole pixels: where the outer lines were found, use where they really are
+        const t = found[0] !== undefined ? found[0] : top, b = found[4] !== undefined ? found[4] : top + 4 * sp;
+        candidates.push({ top: t, bottom: b, space: (b - t) / 4, score: ink * (missing ? 0.7 : 1) });
       }
     }
   }
@@ -77,7 +81,7 @@ function staves(lines) {
   const strong = kept[0].score;
   return kept
     .filter((k) => k.score >= 0.15 * strong) // short systems have short (weak) lines; text can't make five even lines
-    .filter((k) => k.space >= 0.6 * kept[0].space && k.space <= 1.4 * kept[0].space) // staves on a page are of a size
+    .filter((k) => k.space >= 0.75 * kept[0].space && k.space <= 1.33 * kept[0].space) // staves on a page are of a size
     .map((k) => ({ top: k.top, bottom: k.bottom, space: k.space, score: k.score, strong: k.score >= 0.35 * strong,
       lines: [0, 1, 2, 3, 4].map((q) => k.top + q * k.space) }));
 }
@@ -86,10 +90,11 @@ function staves(lines) {
 function extent(gray, w, staff) {
   const lefts = [], rights = [];
   for (const yl of staff.lines) {
-    const o = Math.round(yl) * w;
+    // a band of three rows, since on a crooked scan a staff line wanders up or down a pixel across the page
+    const o = Math.round(yl) * w, up = Math.max(0, o - w), down = Math.min(gray.length - w, o + w);
     let x0 = -1, x1 = -1, run = 0;
     for (let x = 0; x < w; x++) {
-      if (gray[o + x] < DARK) { run++; if (run === 20 && x0 < 0) x0 = x - 19; if (run >= 20) x1 = x; }
+      if (gray[o + x] < DARK || gray[up + x] < DARK || gray[down + x] < DARK) { run++; if (run === 20 && x0 < 0) x0 = x - 19; if (run >= 20) x1 = x; }
       else run = 0;
     }
     if (x0 >= 0) { lefts.push(x0); rights.push(x1); }
@@ -104,20 +109,58 @@ function extent(gray, w, staff) {
 function barlines(gray, w, sys) {
   const cols = [];
   const st = sys.staves;
+  // Where a staff line really is around column x: a scanned page bends a little, so a line can sit a couple of
+  // pixels above or below its average height
+  const lineAt = (y, x) => {
+    let best = -1, by = Math.round(y);
+    for (let dy = -3; dy <= 3; dy++) {
+      const r = Math.round(y) + dy;
+      if (r < 0 || r >= gray.length / w) continue;
+      let ink = 0;
+      for (let xx = Math.max(0, x - 12); xx <= Math.min(w - 1, x + 12); xx++) ink += 255 - gray[r * w + xx];
+      if (ink > best) { best = ink; by = r; }
+    }
+    return by;
+  };
+  const cover = (x, s) => {
+    if (x < 0 || x + 1 >= w) return 0;
+    // a scanned barline is often two pixels wide with a grey edge: ink in this column or the next one counts
+    const dark = (y) => gray[y * w + x] < DARK || gray[y * w + x + 1] < DARK;
+    let d = 0, n = 0;
+    const m0 = Math.round(s.top + s.space), m1 = Math.round(s.bottom - s.space);
+    for (let y = m0; y <= m1; y++) { n++; if (dark(y)) d++; }
+    if (d / n < 0.92) return d / n; // the middle of the staff isn't solid: no need to look closer
+    d = 0; n = 0;
+    for (let y = lineAt(s.top, x); y <= lineAt(s.bottom, x); y++) { n++; if (dark(y)) d++; }
+    return n ? d / n : 0;
+  };
+  // A scan is often a little crooked, so a barline may drift sideways by a pixel or two from one staff to the next
+  const drift = 2;
   for (let x = Math.max(0, sys.left - 2); x <= Math.min(w - 1, sys.right + 2); x++) {
-    let minCover = 1;
-    for (const s of st) {
-      let dark = 0, n = 0;
-      for (let y = Math.round(s.top); y <= Math.round(s.bottom); y++) { n++; if (gray[y * w + x] < DARK) dark++; }
-      minCover = Math.min(minCover, dark / n);
-      if (minCover < 0.92) break;
+    let minCover = cover(x, st[0]);
+    if (minCover < 0.92) continue;
+    const xs = [x];
+    for (let k = 1; k < st.length && minCover >= 0.92; k++) {
+      const from = xs[k - 1];
+      let best = -1, bx = from;
+      for (let d = -drift; d <= drift; d++) {
+        const c = cover(from + d, st[k]);
+        if (c > best || (c === best && Math.abs(d) < Math.abs(bx - from))) { best = c; bx = from + d; }
+      }
+      xs.push(bx);
+      minCover = Math.min(minCover, best);
     }
     if (minCover < 0.92) continue;
     let gap = 1;
     if (st.length > 1) {
       let dark = 0, n = 0;
       for (let k = 0; k + 1 < st.length; k++) {
-        for (let y = Math.round(st[k].bottom) + 1; y < Math.round(st[k + 1].top); y++) { n++; if (gray[y * w + x] < DARK) dark++; }
+        const y0 = Math.round(st[k].bottom) + 1, y1 = Math.round(st[k + 1].top);
+        for (let y = y0; y < y1; y++) {
+          n++;
+          const gx = Math.round(xs[k] + ((xs[k + 1] - xs[k]) * (y - y0)) / Math.max(1, y1 - y0));
+          if (gray[y * w + gx] < DARK || gray[y * w + Math.min(w - 1, gx + 1)] < DARK) dark++;
+        }
       }
       gap = n ? dark / n : 1;
     }
@@ -241,6 +284,8 @@ export function findMeasuresByCount(gray, w, h, total) {
   const all = [];
   for (const st of found) {
     if (all.some((k) => st.top < k.bottom + 3 * k.space && st.bottom > k.top - 3 * k.space)) continue;
+    const e = extent(gray, w, st);
+    if (!(e.right - e.left >= 0.12 * w)) continue; // five short even lines (a big title, say) aren't a staff
     all.push(st);
   }
   all.sort((a, b) => a.top - b.top);
