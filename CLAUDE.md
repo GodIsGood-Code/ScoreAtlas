@@ -92,22 +92,23 @@ Steps are numbered across phases, in order. Work through them in that order unle
 5. **Measure highlighting.** Highlight the measure being played, live. Comes cheaply once step 4 gives measure
    positions.
 
-### Phase B: Practice tools — steps 6–8 built in Test 9, waiting for the owner's feedback
+### Phase B: Practice tools — steps 6–8 built in Test 9, waiting for the owner's feedback; step 9 next
 
 6. **Practice insights:** which bars were repeated most, and where the pianist hesitated.
 7. **Loop a passage:** mark some bars; the app counts repetitions and shows the tempo of each one.
 8. **Tempo graph:** tempo bar by bar after a run-through.
 9. **Record and replay:** play back a practice run with the measure highlight following along.
-10. **Wrong-note detection:** mark the notes that were missed. Needs a trained note-recognition model (for example
-    Spotify's Basic Pitch) plus the score from step 4.
 
 ### Phase C: Everyday essentials and getting ready to release
 
-11. **Library and setlists.**
-12. **Annotations with Apple Pencil:** fingerings and markings.
-13. **Display options:** two pages side by side in landscape, half-page turns, and a performance lock against
+10. **Library and setlists.**
+11. **Annotations with Apple Pencil:** fingerings and markings.
+12. **Display options:** two pages side by side in landscape, half-page turns, and a performance lock against
     accidental taps.
-14. **Offline mode:** works without Wi-Fi at a venue.
+13. **Offline mode:** works without Wi-Fi at a venue.
+14. **Wrong-note detection:** mark the notes that were missed. Needs a trained note-recognition model (for example
+    Spotify's Basic Pitch) plus the score from step 4. Moved here at the owner's request (one of the last Phase C
+    features).
 15. **Release prep:** polish, App Store packaging (for example Capacitor), a look at competing apps, pricing.
 
 ### Phase D: Accompaniment (last)
