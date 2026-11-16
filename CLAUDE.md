@@ -6,6 +6,13 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
+- **Test 10 (current):** record and replay (roadmap step 9) and a "music starts on page" option. Follow records the
+  microphone (`engine/recorder.js`: 16 kHz, 16-bit, on the engine's clock, up to 30 minutes, in memory only); after
+  Stop, "▶ Listen back" (practice report or steps card) plays the last session with the highlight (from the
+  PracticeLog's positions) and the pages (from the highlight, else the session's turn log) following; −5 s / +5 s,
+  a slider, Done; ▶ next to bars in the report plays that moment (a second early). Sheet music options: "The music
+  starts on page" (`firstPage`: `shiftPages` for the file's own pages, `withPageStarts(score, starts, first)` with
+  bar numbers) so one movement of a multi-movement PDF can be added at a time (only one sheet music per PDF).
 - **Test 9 feedback and fixes (published before Test 10):** the owner: "went pretty well"; turns and following much
   better; a little trouble from the bottom of page 5 to the top of page 6; refrains still occasionally jumped to a
   copy on another page although the page showing had one; flipped practice skips went decently; loops worked; report
@@ -101,7 +108,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
 5. **Measure highlighting.** Highlight the measure being played, live. Comes cheaply once step 4 gives measure
    positions.
 
-### Phase B: Practice tools — steps 6–8 built in Test 9, waiting for the owner's feedback; step 9 next
+### Phase B: Practice tools — steps 6–8 built in Test 9 (owner: worked well), step 9 in Test 10
 
 6. **Practice insights:** which bars were repeated most, and where the pianist hesitated.
 7. **Loop a passage:** mark some bars; the app counts repetitions and shows the tempo of each one.
@@ -145,6 +152,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
     around, or the next run starting at or before the bar a run stopped in, except at the loop's end), bar tempos
     (quarter notes a minute), the longest run and loop repetitions. `report({ refine: false })` skips the re-alignment
     (used live for the loop counter). `busiestPassages`.
+  - `recorder.js`: `Recorder` keeps the session's sound (3-sample smoothing, linear resampling to 16 kHz Int16).
   - `marker.js`: `MeasureMarker` smooths the highlight in played order: one measure forward at once, further forward
     after 0.25 s, back after 0.6 s, at once after a follower jump (`moves`); keeps its measure through 1.5 s unsure.
   - `follower.js`: `makeLesson` (from teaching frames and page turns; long silences squeezed out) and `Follower`:
@@ -209,6 +217,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
   - `python3 tools/synth_performances.py tests/output/perf --sections` then `node tests/sections-eval.js
     tests/output/perf`: teaching in sections (replacement, three overlapping sections, out of order, an untaught gap,
     practice sessions with sections). Currently all pass (14/14 found, 10/10 turns).
+  - `node tests/recorder-unit.js`: the recorder (length, clock, a 440 Hz tone kept, the limit).
   - `node tests/practice-unit.js`: practice insights from made-up sessions (plays, hesitations, tempo, loop).
   - `node tests/real-eval.js SCORE.mxl RECORDING.wav --parts 12 --end 139`: a real recording (convert a Voice Memo
     with ffmpeg to 22.05 kHz mono WAV) that begins with a run-through: truth by offline alignment, the run-through's
@@ -233,7 +242,8 @@ Steps are numbered across phases, in order. Work through them in that order unle
     -output OUT file.pdf`.
   - `NODE_PATH="$(npm root -g)" node tests/score-follow.cjs`: real browser, `tests/fixtures/aba_dc.pdf` plus Audiveris's
     `aba_dc.mxl`, no teaching: turns to page 2 and back for the D.C., measure highlight shown, then bar numbers typed,
-    applied and kept after a reload.
+    applied and kept after a reload; also the practice report (dragging it), listening back (plays, highlight follows,
+    seeking to 50 s shows page 2) and picking a loop.
   - `python3 tools/synth_performances.py tests/output/short --short` then
     `NODE_PATH="$(npm root -g)" node tests/teach-follow.cjs`: real-browser Teach, Follow and Practice with a fake
     microphone (about 2.5 minutes).

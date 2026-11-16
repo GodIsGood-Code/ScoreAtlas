@@ -5,6 +5,7 @@ import { FeatureExtractor } from "./engine/features.js";
 export class Microphone {
   constructor(onFrame) {
     this.onFrame = onFrame;
+    this.onSamples = null; // (samples, sampleRate, time of the first one on the engine's clock): for recording
     this.ctx = null;
   }
 
@@ -43,7 +44,7 @@ export class Microphone {
           node = new AudioWorkletNode(ctx, "pt-capture", {
             numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit",
           });
-          node.port.onmessage = (e) => extractor.push(e.data);
+          node.port.onmessage = (e) => this.feed(extractor, e.data);
         } catch (err) {
           console.warn("Audio worklet unavailable, using the older audio path:", err && err.message);
           node = null;
@@ -52,7 +53,7 @@ export class Microphone {
       if (!node) {
         // Older iPads: the previous way of reading audio
         node = ctx.createScriptProcessor(2048, 1, 1);
-        node.onaudioprocess = (e) => extractor.push(e.inputBuffer.getChannelData(0));
+        node.onaudioprocess = (e) => this.feed(extractor, e.inputBuffer.getChannelData(0));
       }
       source.connect(node);
       node.connect(sink);
@@ -61,6 +62,11 @@ export class Microphone {
       this.stop();
       throw err;
     }
+  }
+
+  feed(extractor, samples) {
+    if (this.onSamples) this.onSamples(samples, extractor.sampleRate, extractor.samples / extractor.sampleRate);
+    extractor.push(samples);
   }
 
   stop() {

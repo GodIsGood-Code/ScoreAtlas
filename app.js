@@ -7,11 +7,12 @@ import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower } from "./engine/follower.js";
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData } from "./store.js";
-import { readScore, keepParts, withPageStarts, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
+import { readScore, keepParts, withPageStarts, shiftPages, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
 import { MeasureMarker } from "./engine/marker.js";
 import { PracticeLog, busiestPassages } from "./engine/practice.js";
+import { Recorder } from "./engine/recorder.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
@@ -293,6 +294,7 @@ async function startFollow() {
     if (loop) practice.setLoop(...playedRange(loop));
   }
   loopState = { endReached: false, quiet: 0, reps: 0, last: null };
+  startRecording();
   updateButtons();
   updateModebar();
   try {
@@ -305,6 +307,8 @@ async function startFollow() {
 
 function stopMode() {
   if (mode === "teach") teach = null;
+  if (mode === "replay") { stopReplay(); return; }
+  if (mode === "follow") keepRecording();
   if (mode === "follow" && practice && practice.n > 10 * FRAME_RATE) finishPractice();
   practice = null;
   mode = "idle";
@@ -377,10 +381,10 @@ function updateButtons() {
   forgetBtn.hidden = !sectionsOf(state.lesson).length || mode !== "idle";
   teachBtn.textContent = mode === "teach" ? "Done" : "Teach";
   teachBtn.setAttribute("aria-pressed", String(mode === "teach"));
-  teachBtn.disabled = !state.pdf || mode === "follow";
+  teachBtn.disabled = !state.pdf || mode === "follow" || mode === "replay";
   followBtn.textContent = mode === "follow" ? "Stop" : "Follow";
   followBtn.setAttribute("aria-pressed", String(mode === "follow"));
-  followBtn.disabled = !state.lesson || mode === "teach";
+  followBtn.disabled = !state.lesson || mode === "teach" || mode === "replay";
   followBtn.title = state.lesson ? "" : "Add this piece's sheet music or teach it first";
   scoreBtn.disabled = !state.pdf || mode !== "idle";
   applyBtn.disabled = mode !== "idle";
@@ -388,7 +392,9 @@ function updateButtons() {
   loopBtn.hidden = !(sec && sec.layout && sec.layout.some(Boolean));
   loopBtn.textContent = loopPick ? "Cancel" : loop ? "Loop off" : "Loop";
   loopBtn.setAttribute("aria-pressed", String(!!loop || !!loopPick));
-  loopBtn.disabled = mode === "teach";
+  loopBtn.disabled = mode === "teach" || mode === "replay";
+  $("replayBtn").hidden = !lastRecording;
+  $("replayCardBtn").hidden = !lastRecording || mode !== "idle";
   reportBtn.hidden = !lastReport;
   micBtn.textContent = micCheck ? "Stop" : "Check microphone";
   micBtn.setAttribute("aria-pressed", String(micCheck));
@@ -449,6 +455,7 @@ function showScoreOptions(section) {
     addBox(fragments, `${plural(fragments.length, "small bit")} split off by mistake (${plural(notes, "note")})`);
   }
   barsInput.value = (opts.pageStarts || []).join(", ");
+  $("startPageInput").value = String(opts.firstPage || 1);
 }
 applyBtn.addEventListener("click", () => {
   const section = sectionsOf(state.lesson).find((s) => s.fromScore);
@@ -458,7 +465,8 @@ applyBtn.addEventListener("click", () => {
   const chosen = boxes.filter((b) => b.checked).flatMap((b) => b.value.split(",").map(Number));
   const parts = chosen.length && chosen.length < all.length ? chosen : null;
   const pageStarts = parsePageStarts(barsInput.value);
-  addScore(section.scoreFile, section.name, { parts, pageStarts });
+  const firstPage = Math.max(1, parseInt($("startPageInput").value, 10) || 1);
+  addScore(section.scoreFile, section.name, { parts, pageStarts, firstPage });
   backToMusic();
 });
 
@@ -610,7 +618,7 @@ function finishPractice() {
   let r;
   try { r = practice.report(); } catch (err) { console.warn("practice report failed", err); return; }
   if (!r.bars.length) return;
-  lastReport = { ...r, sec };
+  lastReport = { ...r, sec, log: practice };
   const key = state.key;
   const summary = {
     date: Date.now(), seconds: Math.round(r.seconds), plays: [...r.plays], hesitations: [...r.hesitations],
@@ -645,9 +653,19 @@ function renderReport() {
     b.type = "button";
     const page = pageOf(m);
     if (!page) b.disabled = true;
-    b.addEventListener("click", () => { if (page) { show(page); flashBar(m); } });
+    b.addEventListener("click", () => { if (page && mode === "idle") { show(page); flashBar(m); } });
     return b;
   };
+  // listen to that moment of the session (when this report's session was recorded)
+  const listen = (t0) => {
+    const b = el("button", "listen-btn", "▶");
+    b.type = "button";
+    b.setAttribute("aria-label", "Listen to this moment");
+    b.hidden = !(lastRecording && lastRecording.log === r.log && t0 !== null && t0 !== undefined);
+    b.addEventListener("click", () => replayFromClock(t0));
+    return b;
+  };
+  const firstTime = (m, hesitation) => { const b = r.bars.find((x) => x.measure === m && x.t0 !== null && (!hesitation || x.hesitation)); return b ? b.t0 : null; };
   const body = $("reportBody");
   body.textContent = "";
   const played = new Set(r.bars.map((b) => b.measure)).size;
@@ -660,7 +678,7 @@ function renderReport() {
     const list = el("ul", "report-list");
     for (const b of busy) {
       const li = el("li");
-      li.append(goTo(b.from, b.from === b.to ? `Bar ${name(b.from)}` : `Bars ${name(b.from)}–${name(b.to)}`), el("span", null, ` ${b.count} times`));
+      li.append(goTo(b.from, b.from === b.to ? `Bar ${name(b.from)}` : `Bars ${name(b.from)}–${name(b.to)}`), el("span", null, ` ${b.count} times`), listen(firstTime(b.from)));
       list.append(li);
     }
     body.append(list);
@@ -675,7 +693,7 @@ function renderReport() {
       for (const b of r.bars) if (b.measure === m && b.hesitation) why[b.hesitation] = (why[b.hesitation] || 0) + 1;
       const main = Object.entries(why).sort((x, y) => y[1] - x[1])[0];
       const li = el("li");
-      li.append(goTo(m, `Bar ${name(m)}`), el("span", null, ` ${count > 1 ? `${count} times, ` : ""}${main ? words[main[0]] : ""}`));
+      li.append(goTo(m, `Bar ${name(m)}`), el("span", null, ` ${count > 1 ? `${count} times, ` : ""}${main ? words[main[0]] : ""}`), listen(firstTime(m, true)));
       list.append(li);
     }
     body.append(list);
@@ -823,6 +841,143 @@ makeMovable(reportPanel, reportPanel.querySelector(".report-head"), "pt-report-p
 makeMovable(card, card.querySelector("h2"), "pt-card-place");
 $("heatToggle").addEventListener("change", (e) => { heatOn = e.target.checked; drawOverlay(); });
 
+/* ---------- Record and replay: listen back to the last session with the highlight and pages following ---------- */
+const replayBar = $("replayBar"), rpPlay = $("rpPlay"), rpSeek = $("rpSeek"), rpTime = $("rpTime");
+let recorder = null; // while following
+let sessionStart = { turns: 0, page: 1 };
+let lastRecording = null; // { samples, rate, startTime, duration, log, sec, turns, firstPage }
+let replay = null; // { ctx, buf, src, playing, offset, t0, raf }
+
+function startRecording() {
+  recorder = new Recorder();
+  mic.onSamples = (block, rate, time) => { if (recorder) recorder.push(block, rate, time); };
+  sessionStart = { turns: turnLog.length, page: state.page };
+}
+
+function keepRecording() {
+  mic.onSamples = null;
+  if (recorder && recorder.duration > 5) {
+    lastRecording = {
+      samples: recorder.samples(), rate: recorder.rate, startTime: recorder.startTime, duration: recorder.duration,
+      log: practice, sec: practice ? scoreSectionOf() : null, turns: turnLog.slice(sessionStart.turns), firstPage: sessionStart.page,
+    };
+  }
+  recorder = null;
+}
+
+// Play the last session from `at` seconds into it
+function startReplay(at = 0) {
+  const R = lastRecording;
+  if (!R || (mode !== "idle" && mode !== "replay")) return;
+  if (!replay) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const buf = ctx.createBuffer(1, R.samples.length, R.rate);
+    buf.getChannelData(0).set(R.samples);
+    replay = { ctx, buf, src: null, playing: false, offset: 0, t0: 0, raf: 0, lastM: -1, lastSeen: -1 };
+  }
+  mode = "replay";
+  replayBar.hidden = false;
+  rpSeek.max = String(R.duration);
+  updateButtons();
+  playFrom(at);
+}
+
+function replayNow() {
+  const r = replay;
+  return r.playing ? r.offset + (r.ctx.currentTime - r.t0) : r.offset;
+}
+
+function stopSource() {
+  const r = replay;
+  if (r && r.src) { r.src.onended = null; try { r.src.stop(); } catch {} r.src.disconnect(); r.src = null; }
+}
+
+function playFrom(at) {
+  const r = replay, R = lastRecording;
+  stopSource();
+  at = Math.max(0, Math.min(R.duration - 0.05, at));
+  const src = r.ctx.createBufferSource();
+  src.buffer = r.buf;
+  src.connect(r.ctx.destination);
+  r.ctx.resume().catch(() => {});
+  src.start(0, at);
+  Object.assign(r, { src, t0: r.ctx.currentTime, offset: at, playing: true, lastM: -1 });
+  src.onended = () => { if (r.src === src) { r.playing = false; r.offset = R.duration; drawReplay(); } };
+  tickReplay();
+}
+
+function pauseReplay() {
+  const r = replay;
+  if (!r) return;
+  if (r.playing) { r.offset = replayNow(); stopSource(); r.playing = false; drawReplay(); }
+  else playFrom(r.offset >= lastRecording.duration - 0.1 ? 0 : r.offset);
+}
+
+function tickReplay() {
+  const r = replay;
+  if (!r) return;
+  cancelAnimationFrame(r.raf);
+  drawReplay();
+  if (r.playing) r.raf = requestAnimationFrame(tickReplay);
+}
+
+// The bar being played at this moment of the recording (from where the follower was), and the page showing
+function drawReplay() {
+  const r = replay, R = lastRecording;
+  if (!r) return;
+  const t = replayNow(), at = R.startTime + t;
+  let m = -1;
+  const log = R.log, sec = R.sec;
+  if (log && sec && sec.layout && log.n) {
+    // the last frame at or before this moment, then back over a moment the follower wasn't sure (up to 1.5 s)
+    let lo = 0, hi = log.n - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (log.time[mid] <= at) lo = mid; else hi = mid - 1; }
+    for (let i = lo; i >= 0 && i > lo - 75; i--) if (log.pos[i] >= 0) { m = log.lesson.measure[log.pos[i]]; break; }
+  }
+  let page = R.firstPage;
+  for (const turn of R.turns) if (turn.time <= at) page = turn.page;
+  if (m >= 0 && sec.layout[m]) page = sec.layout[m].page;
+  if (page !== state.page) show(page);
+  const canvas = sheet.querySelector("canvas");
+  const box = m >= 0 && sec.layout[m];
+  if (box && canvas && box.page === state.page) { placeOnPage(marker, box, canvas); marker.hidden = false; } else marker.hidden = true;
+  rpSeek.value = String(t);
+  rpTime.textContent = `${clock(t)} / ${clock(R.duration)}`;
+  rpPlay.textContent = r.playing ? "Pause" : "Play";
+  rpPlay.setAttribute("aria-pressed", String(r.playing));
+}
+
+function stopReplay() {
+  if (!replay) return;
+  stopSource();
+  cancelAnimationFrame(replay.raf);
+  replay.ctx.close().catch(() => {});
+  replay = null;
+  replayBar.hidden = true;
+  marker.hidden = true;
+  mode = "idle";
+  updateButtons();
+}
+
+rpPlay.addEventListener("click", () => { pauseReplay(); backToMusic(); });
+$("rpBack").addEventListener("click", () => { if (replay) { const t = replayNow() - 5; replay.playing ? playFrom(t) : ((replay.offset = Math.max(0, t)), drawReplay()); } });
+$("rpFwd").addEventListener("click", () => { if (replay) { const t = replayNow() + 5; replay.playing ? playFrom(t) : ((replay.offset = Math.min(lastRecording.duration, t)), drawReplay()); } });
+rpSeek.addEventListener("input", () => {
+  if (!replay) return;
+  const t = Number(rpSeek.value);
+  if (replay.playing) playFrom(t);
+  else { replay.offset = t; drawReplay(); }
+});
+$("rpClose").addEventListener("click", () => { stopReplay(); backToMusic(); });
+$("replayBtn").addEventListener("click", () => startReplay(0));
+$("replayCardBtn").addEventListener("click", () => { setCard(false); startReplay(0); });
+// play from a moment (engine clock) of the last session, a second early
+function replayFromClock(t) {
+  if (!lastRecording) return;
+  startReplay(Math.max(0, t - lastRecording.startTime - 1));
+}
+
 const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps
 
 // A page of the PDF as a grey image, about 130 dots per inch, for finding the measures
@@ -860,9 +1015,12 @@ async function addScore(bytes, name, options = {}) {
     if (options.parts === undefined) options = { ...options, parts: suggestParts(full.parts).mine };
     let score = keepParts(full, options.parts);
     const byBars = !!(options.pageStarts && options.pageStarts.length);
-    if (byBars) score = withPageStarts(score, options.pageStarts);
+    const firstPage = Math.max(1, Math.min(state.count, Math.round(options.firstPage || 1)));
+    if (byBars) score = withPageStarts(score, options.pageStarts, firstPage);
+    else score = shiftPages(score, firstPage);
     if (!score.measures.some((m) => m.notes.length)) throw new Error("the parts you chose have no notes.");
     const counts = byBars ? {} : systemCounts(score);
+    // (the file's own page numbers, moved to where the music starts in the PDF)
     const layout = new Array(score.measures.length).fill(null);
     for (let page = 1; page <= Math.min(score.pages, state.count); page++) {
       const here = score.measures.map((m, i) => (m.page === page ? i : -1)).filter((i) => i >= 0);
@@ -881,7 +1039,7 @@ async function addScore(bytes, name, options = {}) {
     Object.assign(section, {
       layout, measures: score.measures.length, pages: score.pages, name,
       order: Int16Array.from(playOrder(score)), // played-order index -> measure, for the highlight
-      scoreFile: bytes, options: { parts: options.parts || null, pageStarts: byBars ? options.pageStarts : [] },
+      scoreFile: bytes, options: { parts: options.parts || null, pageStarts: byBars ? options.pageStarts : [], firstPage },
       partList: full.parts.map((p) => ({ name: p.name, staves: p.staves, notes: p.notes })),
       barInfo: score.measures.map((m) => ({ number: m.number, quarters: m.quarters, tempo: m.tempo })),
     });
@@ -891,7 +1049,7 @@ async function addScore(bytes, name, options = {}) {
     updateLessonInfo();
     updateButtons();
     let note = "";
-    if (score.pages !== state.count) {
+    if (score.pages > state.count || (firstPage === 1 && score.pages !== state.count)) {
       note = byBars
         ? ` Note: your bar numbers give ${plural(score.pages, "page")}, the PDF has ${plural(state.count, "page")}.`
         : ` Note: the sheet music has ${plural(score.pages, "page")}, the PDF ${plural(state.count, "page")}. If pages turn at the wrong places, type the first bar of each page under Sheet music options.`;

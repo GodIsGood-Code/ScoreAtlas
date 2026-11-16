@@ -297,11 +297,18 @@ export function barNumbers(score) {
 
 // Pages from the pianist's own edition: starts = the first bar number on page 2, 3, ... Every measure gets the page
 // its bar number falls on; systems are then unknown (the measures are found on the page image instead).
-export function withPageStarts(score, starts) {
+// first: the PDF page the music starts on (a later movement, say); starts then name the first bar of each page after it.
+export function withPageStarts(score, starts, first = 1) {
   const sorted = starts.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
   const bars = barNumbers(score);
-  const measures = score.measures.map((m, i) => ({ ...m, page: 1 + sorted.filter((s) => bars[i] >= s).length, system: 0 }));
-  return { ...score, measures, pages: 1 + sorted.length, pageStarts: sorted };
+  const measures = score.measures.map((m, i) => ({ ...m, page: first + sorted.filter((s) => bars[i] >= s).length, system: 0 }));
+  return { ...score, measures, pages: first + sorted.length, pageStarts: sorted };
+}
+
+// The sheet music's own pages moved later in the PDF (it starts on PDF page `first`)
+export function shiftPages(score, first = 1) {
+  if (first <= 1) return score;
+  return { ...score, measures: score.measures.map((m) => ({ ...m, page: m.page + first - 1 })), pages: score.pages + first - 1 };
 }
 
 // "12, 27 41" -> [12, 27, 41]

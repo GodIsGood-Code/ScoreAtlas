@@ -79,6 +79,21 @@ const PERF = path.join(__dirname, 'output/perf');
   await page.mouse.move(head.x - 300, head.y - 500, { steps: 8 }); await page.mouse.up();
   const after = await page.$eval('#report', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; });
   check('the report moves when dragged by its title', before.x - after.x > 250 && before.y - after.y > 400, `from ${Math.round(before.x)},${Math.round(before.y)} to ${Math.round(after.x)},${Math.round(after.y)}`);
+  // Listen back: the recording plays with the highlight and pages following
+  check('the report offers listening back', await page.isVisible('#replayBtn'));
+  check('bars in the report have a listen button', (await page.$$('#reportBody .listen-btn:not([hidden])')).length > 0);
+  await page.click('#replayBtn');
+  await page.waitForTimeout(2500);
+  const rp = await page.evaluate(() => ({ bar: !document.querySelector('#replayBar').hidden, time: document.querySelector('#rpTime').textContent,
+    seek: Number(document.querySelector('#rpSeek').value), mark: !document.querySelector('.measure-mark').hidden, mode: window.pageTurner.mode }));
+  check('listening back plays the session', rp.bar && rp.seek > 1 && rp.mode === 'replay', `${rp.time}`);
+  check('the highlight follows the replay', rp.mark);
+  await page.screenshot({ path: path.join(__dirname, 'output/replay.png') });
+  await page.$eval('#rpSeek', (e) => { e.value = '50'; e.dispatchEvent(new Event('input')); });
+  await page.waitForTimeout(400);
+  check('jumping to 50 s in the replay shows page 2 (section B)', (await page.inputValue('#rpSeek').then(Number)) >= 50 && (await page.evaluate(() => window.pageTurner.page)) === 2, `page ${await page.evaluate(() => window.pageTurner.page)}`);
+  await page.click('#rpClose');
+  check('Done ends the replay', (await page.evaluate(() => window.pageTurner.mode)) === 'idle' && (await page.isHidden('#replayBar')));
   await page.click('#reportClose');
   // Loop: tap Loop, then the first and the third bar on the page
   await page.click('#loopBtn');
@@ -101,6 +116,7 @@ const PERF = path.join(__dirname, 'output/perf');
   await page.waitForFunction(() => /Sheet music ready/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 }).catch(() => {});
   const info2 = (await page.textContent('#lessonInfo')).trim();
   check('rebuilt from bar numbers', /Sheet music: 16 measures on 2 pages\.$/.test(info2), info2);
+  await page.waitForTimeout(1500); // let the save finish
   await page.reload();
   await page.waitForFunction(() => /Sheet music/.test(document.querySelector('#lessonInfo').textContent), null, { timeout: 15000 }).catch(() => {});
   check('bar numbers kept after a reload', (await page.inputValue('#barsInput')) === '9', await page.inputValue('#barsInput'));
