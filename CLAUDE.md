@@ -110,7 +110,9 @@ language; the owner tests on their iPad and reports back.
   still while the pianist plays something that isn't in the piece. A page flip by the pianist is a hint.
 - **Test 3:** Teach and Follow. The owner tested it on their piano: every page turned by itself at the taught
   moments, no wrong turns, never stuck. The pedal keys work (the "Pedal keys received" line showed them correctly).
-- Live at https://godisgood-code.github.io/ScoreAtlas/ through GitHub Pages (repository GodIsGood-code/ScoreAtlas), deployed from `main`, root folder.
+- Live at https://godisgood-code.github.io/ScoreAtlas/ through GitHub Pages (repository GodIsGood-code/ScoreAtlas)
+  (in cloud sessions, push to the old URL github.com/GodIsGood-code/page-turner: GitHub forwards it, while the new name
+  was refused by the session's access), deployed from `main`, root folder.
 - The owner approved publishing tested updates straight to `main` (no need to ask each time).
 - Test 2 feedback from the owner: single notes without pedal were read well; pedaled chords with uneven voicing
   were not; the display felt slightly delayed. Test 1 was a claude.ai artifact (artifacts can't use the mic).
