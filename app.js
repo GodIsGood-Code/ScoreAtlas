@@ -11,6 +11,7 @@ import { readScore, keepParts, withPageStarts, parsePageStarts, playOrder, sugge
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
 import { MeasureMarker } from "./engine/marker.js";
+import { PracticeLog, busiestPassages } from "./engine/practice.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
@@ -27,6 +28,16 @@ const marker = document.createElement("div");
 marker.className = "measure-mark";
 marker.hidden = true;
 const smoother = new MeasureMarker(FRAME_RATE / 2); // drawn every other frame
+// loop outlines and the practice "heat" on the bars, drawn over the page
+const overlay = document.createElement("div");
+overlay.className = "overlay";
+const loopBtn = $("loopBtn"), reportPanel = $("report"), reportBtn = $("reportBtn");
+let practice = null; // PracticeLog while following with sheet music
+let lastReport = null; // the most recent session's report
+let loop = null; // { from, to } measure indices of the passage being looped
+let loopPick = 0; // 1: waiting for the first bar to be tapped, 2: for the last
+let loopFirst = -1;
+let heatOn = true;
 const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
 const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
@@ -146,7 +157,8 @@ async function show(n) {
     return;
   }
   if (token !== showToken) return;
-  sheet.replaceChildren(canvas, marker);
+  sheet.replaceChildren(canvas, overlay, marker);
+  drawOverlay();
   setStatus(null);
   // Keep the pages on either side ready so a turn is instant
   const near = [state.page + 1, state.page - 1].filter((p) => p >= 1 && p <= state.count);
@@ -274,6 +286,13 @@ async function startFollow() {
       flashMode(why === "jump" ? `Found you on page ${page}` : `Turned to page ${page}`);
     },
   });
+  const sec = scoreSectionOf();
+  practice = null;
+  if (sec && follower.lesson.order) {
+    practice = new PracticeLog(follower.lesson, Array.from(follower.lesson.order), barInfoOf(sec), (f, j) => follower.cost(f, j));
+    if (loop) practice.setLoop(...playedRange(loop));
+  }
+  loopState = { endReached: false, quiet: 0, reps: 0, last: null };
   updateButtons();
   updateModebar();
   try {
@@ -286,6 +305,8 @@ async function startFollow() {
 
 function stopMode() {
   if (mode === "teach") teach = null;
+  if (mode === "follow" && practice && practice.n > 10 * FRAME_RATE) finishPractice();
+  practice = null;
   mode = "idle";
   follower = null;
   marker.hidden = true;
@@ -303,6 +324,8 @@ window.pageTurner = {
   get mode() { return mode; },
   get page() { return state.page; },
   turns: turnLog,
+  // the measure boxes on the page on screen (page fractions), for tests
+  layoutOnPage: () => { const sec = scoreSectionOf(); return sec && sec.layout ? sec.layout.filter((b) => b && b.page === state.page) : []; },
 };
 
 function onFrame(frame) {
@@ -314,6 +337,11 @@ function onFrame(frame) {
     if (teach.frames.length % 25 === 0) updateModebar();
   } else if (mode === "follow" && follower) {
     const st = follower.push(frame);
+    if (practice) {
+      const sure = follower.status === "following" && !follower.unsure;
+      practice.record(frame, sure ? follower.position : -1, follower.moves || 0);
+      if (loop) loopFrame(frame, sure);
+    }
     if (frame.index % 5 === 0) updateModebar(st);
     if (frame.index % 2 === 0) drawMarker();
   }
@@ -339,6 +367,7 @@ function updateModebar(st = follower && follower.state()) {
     if (st.status === "waiting") text = "Following · start playing anywhere on this page";
     else if (st.status === "searching") text = "Following · listening for where you are";
     else text = st.unsure ? "Following · not sure where you are" : `Following · ${Math.round(st.progress * 100)}% through`;
+    if (loop && practice && st.status === "following" && loopState.reps) text += ` · loop ${plural(loopState.reps, "time")}${loopState.last ? `, last ♩ ${Math.round(loopState.last)}` : ""}`;
     if (performance.now() < flash.until) text = `Following · ${flash.text}`;
     modeText.textContent = text;
   }
@@ -355,6 +384,12 @@ function updateButtons() {
   followBtn.title = state.lesson ? "" : "Add this piece's sheet music or teach it first";
   scoreBtn.disabled = !state.pdf || mode !== "idle";
   applyBtn.disabled = mode !== "idle";
+  const sec = scoreSectionOf();
+  loopBtn.hidden = !(sec && sec.layout && sec.layout.some(Boolean));
+  loopBtn.textContent = loopPick ? "Cancel" : loop ? "Loop off" : "Loop";
+  loopBtn.setAttribute("aria-pressed", String(!!loop || !!loopPick));
+  loopBtn.disabled = mode === "teach";
+  reportBtn.hidden = !lastReport;
   micBtn.textContent = micCheck ? "Stop" : "Check microphone";
   micBtn.setAttribute("aria-pressed", String(micCheck));
 }
@@ -443,12 +478,313 @@ function drawMarker() {
   movesSeen = moves;
   const box = m >= 0 && f.layout ? f.layout[m] : null;
   if (!box || box.page !== state.page || !canvas) { marker.hidden = true; return; }
-  marker.style.left = `${canvas.offsetLeft + box.x0 * canvas.offsetWidth}px`;
-  marker.style.top = `${canvas.offsetTop + box.y0 * canvas.offsetHeight}px`;
-  marker.style.width = `${(box.x1 - box.x0) * canvas.offsetWidth}px`;
-  marker.style.height = `${(box.y1 - box.y0) * canvas.offsetHeight}px`;
+  placeOnPage(marker, box, canvas);
   marker.hidden = false;
 }
+
+/* ---------- Practice: loop a passage, and the report after a session ---------- */
+const scoreSectionOf = () => sectionsOf(state.lesson).find((s) => s.fromScore) || null;
+// bar numbers and lengths of the sheet music's measures (kept with the sheet music since Test 9; read again before)
+function barInfoOf(sec) {
+  if (!sec.barInfo && sec.scoreFile) {
+    try { sec.barInfo = readScore(sec.scoreFile).measures.map((m) => ({ number: m.number, quarters: m.quarters, tempo: m.tempo })); } catch {}
+  }
+  return sec.barInfo || Array.from({ length: sec.measures || 0 }, (_, i) => ({ number: String(i + 1), quarters: 4 }));
+}
+const barName = (sec, m) => { const b = barInfoOf(sec)[m]; return b ? b.number : String(m + 1); };
+// the played bars a loop over measures from..to covers (the first time through, if the passage repeats)
+function playedRange(l) {
+  const order = scoreSectionOf().order;
+  let a = order.indexOf(l.from);
+  if (a < 0) a = 0;
+  let z = a;
+  while (z < order.length - 1 && order[z] !== l.to) z++;
+  return [a, z];
+}
+const playedRangeToMeasures = (l) => { const o = scoreSectionOf().order; return { from: o[l.from], to: o[l.to] }; };
+
+// Places an element over a measure box on the page on screen
+function placeOnPage(el, box, canvas) {
+  el.style.left = `${canvas.offsetLeft + box.x0 * canvas.offsetWidth}px`;
+  el.style.top = `${canvas.offsetTop + box.y0 * canvas.offsetHeight}px`;
+  el.style.width = `${(box.x1 - box.x0) * canvas.offsetWidth}px`;
+  el.style.height = `${(box.y1 - box.y0) * canvas.offsetHeight}px`;
+}
+
+// The loop's bars outlined, and while the report is open, each bar tinted by how often it was played
+function drawOverlay() {
+  overlay.textContent = "";
+  const sec = scoreSectionOf(), canvas = sheet.querySelector("canvas");
+  if (!sec || !sec.layout || !canvas) return;
+  const here = (m) => sec.layout[m] && sec.layout[m].page === state.page;
+  if (lastReport && heatOn && !reportPanel.hidden) {
+    const most = Math.max(1, ...lastReport.plays.values());
+    for (const [m, count] of lastReport.plays) {
+      if (!here(m)) continue;
+      const el = document.createElement("div");
+      el.className = "heat-mark";
+      el.style.setProperty("--heat", (0.06 + 0.3 * (count / most)).toFixed(2));
+      el.dataset.count = `×${count}`;
+      if (lastReport.hesitations.get(m)) el.dataset.hesitated = "";
+      placeOnPage(el, sec.layout[m], canvas);
+      overlay.append(el);
+    }
+  }
+  if (loop || loopPick === 2) {
+    const a = loop ? loop.from : loopFirst, z = loop ? loop.to : loopFirst;
+    for (let m = a; m <= z; m++) {
+      if (!here(m)) continue;
+      const el = document.createElement("div");
+      el.className = "loop-mark";
+      placeOnPage(el, sec.layout[m], canvas);
+      overlay.append(el);
+    }
+  }
+}
+
+loopBtn.addEventListener("click", () => {
+  if (loopPick) loopPick = 0;
+  else if (loop) {
+    loop = null;
+    if (practice) practice.setLoop(null);
+    toast("Loop off", 1200);
+  } else {
+    loopPick = 1;
+    toast("Tap the first bar of the passage to loop", 2500);
+  }
+  updateButtons();
+  drawOverlay();
+  backToMusic();
+});
+
+function pickLoopBar(x, y) {
+  const sec = scoreSectionOf(), canvas = sheet.querySelector("canvas");
+  if (!sec || !canvas) return;
+  const r = canvas.getBoundingClientRect();
+  const fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
+  const m = sec.layout.findIndex((b) => b && b.page === state.page && fx >= b.x0 && fx <= b.x1 && fy >= b.y0 && fy <= b.y1);
+  if (m < 0) { toast("Tap inside a bar (turn pages with the arrows or the pedal)", 2200); return; }
+  if (loopPick === 1) {
+    loopFirst = m;
+    loopPick = 2;
+    toast(`From bar ${barName(sec, m)}. Now tap the last bar (turn the page first if it's on the next one)`, 3000);
+  } else {
+    loop = { from: Math.min(loopFirst, m), to: Math.max(loopFirst, m) };
+    loopPick = 0;
+    if (practice) practice.setLoop(...playedRange(loop));
+    loopState.reps = 0;
+    loopState.last = null;
+    toast(`Looping bars ${barName(sec, loop.from)}–${barName(sec, loop.to)}. Play it as often as you like; Follow counts each time`, 3500);
+  }
+  updateButtons();
+  drawOverlay();
+}
+
+// While looping: count repetitions, and when the pianist stops after the loop's last bar, show its first page again
+let loopState = { endReached: false, quiet: 0, reps: 0, last: null };
+function loopFrame(frame, sure) {
+  const [a, z] = playedRange(loop);
+  const f = follower.lesson;
+  if (sure) {
+    const p = f.played[follower.position];
+    if (p === z) loopState.endReached = true;
+    else if (p >= a && p < z) loopState.endReached = false;
+  }
+  loopState.quiet = frame.sounding ? 0 : loopState.quiet + 1;
+  if (loopState.endReached && loopState.quiet === Math.round(0.6 * FRAME_RATE)) {
+    loopState.endReached = false;
+    const sec = scoreSectionOf(), box = sec.layout && sec.layout[loop.from];
+    const page = box ? box.page : null;
+    if (page && page !== state.page) { show(page); follower.pianistTurned(page); }
+  }
+  if (frame.index % FRAME_RATE === 0) {
+    const reps = practice.report({ refine: false }).loopReps;
+    loopState.reps = reps.length;
+    loopState.last = reps.length ? reps[reps.length - 1].tempo : null;
+  }
+}
+
+// After a session: work out the report, keep a summary of it on the iPad, and show it
+function finishPractice() {
+  const sec = scoreSectionOf();
+  let r;
+  try { r = practice.report(); } catch (err) { console.warn("practice report failed", err); return; }
+  if (!r.bars.length) return;
+  lastReport = { ...r, sec };
+  const key = state.key;
+  const summary = {
+    date: Date.now(), seconds: Math.round(r.seconds), plays: [...r.plays], hesitations: [...r.hesitations],
+    tempo: r.longest ? r.longest.map((b) => [b.measure, b.tempo ? Math.round(b.tempo) : null]) : [],
+    loop: r.loop ? playedRangeToMeasures(r.loop) : null, loopReps: r.loopReps.map((x) => Math.round(x.tempo)),
+  };
+  loadLesson(`${key}|practice`).then((old) => {
+    const sessions = [...((old && old.sessions) || []), summary].slice(-50);
+    return saveLesson(`${key}|practice`, { sessions });
+  }).catch(() => {});
+  renderReport();
+  setReport(true);
+}
+
+function setReport(open) {
+  reportPanel.hidden = !open;
+  if (open) setCard(false);
+  drawOverlay();
+  updateButtons();
+}
+reportBtn.addEventListener("click", () => { renderReport(); setReport(true); });
+
+function renderReport() {
+  const r = lastReport;
+  if (!r) return;
+  const sec = r.sec;
+  const name = (m) => barName(sec, m);
+  const pageOf = (m) => (sec.layout && sec.layout[m] ? sec.layout[m].page : null);
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const goTo = (m, text) => {
+    const b = el("button", "bar-link", text);
+    b.type = "button";
+    const page = pageOf(m);
+    if (!page) b.disabled = true;
+    b.addEventListener("click", () => { if (page) { show(page); flashBar(m); } });
+    return b;
+  };
+  const body = $("reportBody");
+  body.textContent = "";
+  const played = new Set(r.bars.map((b) => b.measure)).size;
+  const hesCount = [...r.hesitations.values()].reduce((x, y) => x + y, 0);
+  body.append(el("p", "report-sum", `${clock(r.seconds)} of practice · ${plural(played, "bar")} played${hesCount ? ` · ${plural(hesCount, "hesitation")}` : ""}`));
+
+  const busy = busiestPassages(r.plays, barInfoOf(sec).length);
+  if (busy.length) {
+    body.append(el("h3", null, "Practised most"));
+    const list = el("ul", "report-list");
+    for (const b of busy) {
+      const li = el("li");
+      li.append(goTo(b.from, b.from === b.to ? `Bar ${name(b.from)}` : `Bars ${name(b.from)}–${name(b.to)}`), el("span", null, ` ${b.count} times`));
+      list.append(li);
+    }
+    body.append(list);
+  }
+  const words = { slow: "slowed down", paused: "paused", "went back": "stopped and went back" };
+  if (r.hesitations.size) {
+    body.append(el("h3", null, "Where you hesitated"));
+    const list = el("ul", "report-list");
+    const top = [...r.hesitations].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 6);
+    for (const [m, count] of top) {
+      const why = {};
+      for (const b of r.bars) if (b.measure === m && b.hesitation) why[b.hesitation] = (why[b.hesitation] || 0) + 1;
+      const main = Object.entries(why).sort((x, y) => y[1] - x[1])[0];
+      const li = el("li");
+      li.append(goTo(m, `Bar ${name(m)}`), el("span", null, ` ${count > 1 ? `${count} times, ` : ""}${main ? words[main[0]] : ""}`));
+      list.append(li);
+    }
+    body.append(list);
+  }
+  if (r.loop && r.loopReps.length) {
+    const lm = playedRangeToMeasures(r.loop);
+    body.append(el("h3", null, `Loop, bars ${name(lm.from)}–${name(lm.to)}: ${plural(r.loopReps.length, "time")}`));
+    body.append(el("p", "report-loop", r.loopReps.map((x, i) => `${i + 1}: ♩ ${Math.round(x.tempo)}`).join(" · ")));
+  }
+  const run = r.longest && r.longest.filter((b) => b.tempo);
+  if (run && run.length >= 4) {
+    body.append(el("h3", null, `Tempo in your longest run (${plural(r.longest.length, "bar")}, from bar ${name(r.longest[0].measure)} to bar ${name(r.longest[r.longest.length - 1].measure)})`));
+    body.append(tempoChart(run, sec));
+  }
+  if (!busy.length && !r.hesitations.size && !(run && run.length >= 4)) body.append(el("p", "note", "Play a little longer for more to show here."));
+}
+
+// Tempo bar by bar for one run: a line, hesitations marked, the marked tempo as a dashed line; tap for values
+function tempoChart(run, sec) {
+  const NS = "http://www.w3.org/2000/svg";
+  const wrap = document.createElement("div");
+  wrap.className = "tempo-chart";
+  const W = 340, H = 150, L = 34, R = 8, T = 12, B = 22;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  const info = barInfoOf(sec);
+  const marked = (info.find((b) => b.tempo > 0) || {}).tempo || 0;
+  const vals = run.map((b) => b.tempo);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (marked) { lo = Math.min(lo, marked); hi = Math.max(hi, marked); }
+  const step = hi - lo > 120 ? 40 : 20;
+  lo = Math.max(0, Math.floor(lo / step) * step);
+  hi = Math.ceil(hi / step) * step;
+  if (hi === lo) hi = lo + step;
+  const x = (i) => L + (run.length === 1 ? 0 : (i * (W - L - R)) / (run.length - 1));
+  const y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
+  const add = (tag, attrs, text) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text !== undefined) e.textContent = text;
+    svg.append(e);
+    return e;
+  };
+  svg.setAttribute("aria-label", `Tempo by bar, from ${Math.round(Math.min(...vals))} to ${Math.round(Math.max(...vals))} quarter notes a minute`);
+  for (let v = lo; v <= hi + 1e-6; v += step) {
+    add("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: "grid" });
+    add("text", { x: L - 6, y: y(v) + 4, class: "axis", "text-anchor": "end" }, String(v));
+  }
+  const every = Math.max(1, Math.ceil(run.length / 7));
+  run.forEach((b, i) => { if (i % every === 0 || i === run.length - 1) add("text", { x: x(i), y: H - 6, class: "axis", "text-anchor": "middle" }, barName(sec, b.measure)); });
+  if (marked) {
+    add("line", { x1: L, x2: W - R, y1: y(marked), y2: y(marked), class: "marked" });
+    add("text", { x: W - R, y: y(marked) - 4, class: "axis", "text-anchor": "end" }, `marked ${marked}`);
+  }
+  add("path", { d: run.map((b, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(b.tempo).toFixed(1)}`).join(""), class: "tempo-line" });
+  run.forEach((b, i) => { if (b.hesitation) add("circle", { cx: x(i), cy: y(b.tempo), r: 4, class: "tempo-dot" }); });
+  const cross = add("line", { x1: 0, x2: 0, y1: T, y2: H - B, class: "cross", visibility: "hidden" });
+  const tip = document.createElement("div");
+  tip.className = "chart-tip";
+  tip.hidden = true;
+  const words = { slow: "slowed down", paused: "paused", "went back": "stopped" };
+  const showAt = (clientX) => {
+    const r = svg.getBoundingClientRect();
+    const vx = ((clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(run.length - 1, Math.round(((vx - L) / (W - L - R)) * (run.length - 1))));
+    const b = run[i];
+    cross.setAttribute("x1", x(i));
+    cross.setAttribute("x2", x(i));
+    cross.setAttribute("visibility", "visible");
+    tip.textContent = `Bar ${barName(sec, b.measure)} · ♩ ${Math.round(b.tempo)}${b.hesitation ? ` · ${words[b.hesitation]}` : ""}`;
+    tip.hidden = false;
+    tip.style.left = `${Math.min(r.width - 10, Math.max(10, (x(i) / W) * r.width))}px`;
+  };
+  svg.addEventListener("pointermove", (e) => showAt(e.clientX));
+  svg.addEventListener("pointerdown", (e) => showAt(e.clientX));
+  svg.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  wrap.append(svg, tip);
+  // the same numbers as a table, for reading out
+  const details = document.createElement("details");
+  details.innerHTML = "<summary>As a table</summary>";
+  const table = document.createElement("table");
+  table.innerHTML = "<thead><tr><th>Bar</th><th>♩ a minute</th><th></th></tr></thead>";
+  const tb = document.createElement("tbody");
+  for (const b of run) {
+    const tr = document.createElement("tr");
+    for (const v of [barName(sec, b.measure), Math.round(b.tempo), b.hesitation ? words[b.hesitation] : ""]) { const td = document.createElement("td"); td.textContent = v; tr.append(td); }
+    tb.append(tr);
+  }
+  table.append(tb);
+  details.append(table);
+  wrap.append(details);
+  return wrap;
+}
+
+// Briefly highlight a bar (from the report), once its page is on screen
+function flashBar(m, tries = 0) {
+  const sec = scoreSectionOf(), canvas = sheet.querySelector("canvas");
+  const box = sec && sec.layout && sec.layout[m];
+  if (!box) return;
+  if (!canvas || box.page !== state.page || !canvas.isConnected) { if (tries < 20) setTimeout(() => flashBar(m, tries + 1), 150); return; }
+  const el = document.createElement("div");
+  el.className = "flash-mark";
+  placeOnPage(el, box, canvas);
+  overlay.append(el);
+  setTimeout(() => el.remove(), 1600);
+}
+$("reportClose").addEventListener("click", () => { setReport(false); backToMusic(); });
+$("heatToggle").addEventListener("change", (e) => { heatOn = e.target.checked; drawOverlay(); });
 
 const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps
 
@@ -510,6 +846,7 @@ async function addScore(bytes, name, options = {}) {
       order: Int16Array.from(playOrder(score)), // played-order index -> measure, for the highlight
       scoreFile: bytes, options: { parts: options.parts || null, pageStarts: byBars ? options.pageStarts : [] },
       partList: full.parts.map((p) => ({ name: p.name, staves: p.staves, notes: p.notes })),
+      barInfo: score.measures.map((m) => ({ number: m.number, quarters: m.quarters, tempo: m.tempo })),
     });
     // replace any earlier sheet music; taught sections stay (they're used where they fit better)
     state.lesson = { version: 2, sections: [section, ...sectionsOf(state.lesson).filter((s) => !s.fromScore)] };
@@ -692,6 +1029,7 @@ stand.addEventListener("pointerup", (e) => {
   const dx = e.clientX - down.x, dy = e.clientY - down.y, dt = performance.now() - down.t;
   down = null;
   if (Math.abs(dx) > 40 && Math.abs(dx) > 1.5 * Math.abs(dy)) return turn(dx < 0 ? 1 : -1);
+  if (Math.hypot(dx, dy) < 14 && dt < 600 && loopPick) return pickLoopBar(e.clientX, e.clientY);
   if (Math.hypot(dx, dy) < 14 && dt < 600) {
     const r = stand.getBoundingClientRect();
     turn(e.clientX - r.left < r.width / 3 ? -1 : 1);

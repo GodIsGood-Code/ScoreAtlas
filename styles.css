@@ -10,6 +10,7 @@
   --brass: #8a6a1f;
   --brass-wash: #f2e8cc;
   --ok: #2f6b45;
+  --chart-line: #8f6400; /* checked with the dataviz palette validator against the rail colour */
   --rec: #b3261e;
   --page-shadow: 0 1px 2px rgba(20, 24, 30, .16), 0 10px 28px rgba(20, 24, 30, .14);
   --font-ui: "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif;
@@ -20,7 +21,7 @@
   :root {
     --stand: #0e1013; --rail: #181b1f; --ink: #e8eaed; --muted: #9aa3ad; --line: #2f343b;
     --well: #22262c; --well-dark: #15181c;
-    --brass: #d8b45f; --brass-wash: #3a3021; --ok: #7cc495; --rec: #f2b8b5;
+    --brass: #d8b45f; --brass-wash: #3a3021; --ok: #7cc495; --rec: #f2b8b5; --chart-line: #b8892a;
     --page-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
@@ -52,7 +53,7 @@ body {
   background: var(--rail);
   border-bottom: 1px solid var(--line);
 }
-.ident { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 220px; }
+.ident { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 120px; }
 .mark { font-weight: 700; font-size: 17px; letter-spacing: .01em; white-space: nowrap; }
 .tag {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
@@ -197,3 +198,35 @@ body {
   .modebar[data-mode="teach"] .dot { animation: none; }
   .key-col .bar i, .progress i, .measure-mark { transition: none; }
 }
+
+/* Practice: loop outlines, practice "heat" on the bars, and the report */
+.overlay { position: absolute; inset: 0; pointer-events: none; }
+.loop-mark { position: absolute; border: 2px dashed var(--brass); border-radius: 4px; background: color-mix(in srgb, var(--brass) 8%, transparent); }
+.heat-mark { position: absolute; border-radius: 3px; background: rgb(200 140 20 / var(--heat)); mix-blend-mode: multiply; }
+.heat-mark::after { content: attr(data-count); position: absolute; top: 2px; right: 4px; font: 700 12px/1 var(--font-ui); color: #5c4300; }
+.heat-mark[data-hesitated]::before { content: ""; position: absolute; top: 4px; left: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 0 2px #fff; }
+.flash-mark { position: absolute; border-radius: 4px; outline: 3px solid var(--brass); animation: flash 1.6s ease-out forwards; }
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+.card.report { z-index: 6; }
+.report-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.report h3 { margin: 4px 0 0; font-size: 15px; }
+.report-sum { font-weight: 700; font-size: 15px; }
+.report-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 15px; }
+.report-list li { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.report-loop { font-family: var(--font-key); font-size: 13px; }
+.bar-link { font: inherit; font-weight: 700; color: var(--ink); background: var(--well); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; min-height: 32px; cursor: pointer; }
+.bar-link:disabled { cursor: default; opacity: .6; }
+.tempo-chart { position: relative; }
+.tempo-chart svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.tempo-chart .grid { stroke: var(--line); stroke-width: 1; }
+.tempo-chart .axis { fill: var(--muted); font: 11px var(--font-ui); }
+.tempo-chart .marked { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.tempo-chart .tempo-line { fill: none; stroke: var(--chart-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.tempo-chart .tempo-dot { fill: var(--chart-line); stroke: var(--rail); stroke-width: 2; }
+.tempo-chart .cross { stroke: var(--muted); stroke-width: 1; }
+.chart-tip { position: absolute; top: 0; transform: translate(-50%, -100%); background: var(--ink); color: var(--rail); font-size: 13px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; }
+.tempo-chart details { font-size: 14px; margin-top: 4px; }
+.tempo-chart table { border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+.tempo-chart td, .tempo-chart th { padding: 2px 10px 2px 0; text-align: left; }
+.heat-toggle { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--muted); }
+.heat-toggle input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--brass); }

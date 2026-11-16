@@ -64,8 +64,28 @@ const PERF = path.join(__dirname, 'output/perf');
   check('turned back to page 1 for the D.C.', !!back1, fmt(back1, 96));
   check('no other page changes', turns.length === 2, turns.map((t) => `${t.time.toFixed(1)}s p${t.page} ${t.how}`).join(', '));
 
-  // Sheet music options: type the first bar of page 2 and apply; the choice is kept after a reload
+  // Stopping opens the practice report
   await page.click('#followBtn'); // stop
+  await page.waitForSelector('#report:not([hidden])', { timeout: 15000 }).catch(() => {});
+  const reportText = (await page.textContent('#reportBody').catch(() => '')) || '';
+  check('practice report opens after stopping', await page.isVisible('#report'), reportText.slice(0, 80));
+  check('report shows a tempo graph', (await page.$('#reportBody .tempo-line')) !== null);
+  check('bars on the page are tinted by practice', (await page.$$('.heat-mark')).length > 0, `${(await page.$$('.heat-mark')).length} bars`);
+  await page.screenshot({ path: path.join(__dirname, 'output/practice-report.png') });
+  await page.click('#reportClose');
+  // Loop: tap Loop, then the first and the third bar on the page
+  await page.click('#loopBtn');
+  const cbox = await page.$eval('#sheet canvas', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  const boxes = await page.evaluate(() => window.pageTurner.layoutOnPage());
+  if (boxes.length >= 3) {
+    const tap = async (b) => page.mouse.click(cbox.x + ((b.x0 + b.x1) / 2) * cbox.w, cbox.y + ((b.y0 + b.y1) / 2) * cbox.h);
+    await tap(boxes[0]); await page.waitForTimeout(100); await tap(boxes[2]); await page.waitForTimeout(200);
+  }
+  check('a loop over three bars is outlined', (await page.$$('.loop-mark')).length === 3, `${(await page.$$('.loop-mark')).length} outlined`);
+  check('the Loop button now turns it off', (await page.textContent('#loopBtn')) === 'Loop off');
+  await page.click('#loopBtn');
+  if (await page.isHidden('#card')) await page.click('#helpBtn');
+  // Sheet music options: type the first bar of page 2 and apply; the choice is kept after a reload
   check('sheet music options shown', await page.isVisible('#scoreOpts'));
   check('no part list for a one-part piece', !(await page.isVisible('#partsBox')));
   await page.fill('#barsInput', '9');

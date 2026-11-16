@@ -6,7 +6,13 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 9 (current):** fixes from the owner's Test 8 run (Encourage One Another, a piano accompaniment with a
+- **Test 9 (current):** practice tools (roadmap steps 6–8) plus fixes from the owner's Test 8 run. Practice: Follow
+  with sheet music keeps a `PracticeLog`; Stop opens a practice report (bars practised most, where they hesitated:
+  slowed down, paused, or stopped and went back; tempo bar by bar for the longest run as a graph with a tap tooltip
+  and a table; bars on the page tinted by how often they were played); a summary of each session is kept on the iPad
+  (`<piece key>|practice` in the lessons store, last 50). Loop: the Loop button, then tap the first and last bar;
+  Follow counts repetitions with each one's tempo (shown in the top bar and the report) and, when the pianist stops
+  after the loop's last bar, shows the loop's first page again (as a flip hint). The fixes from the Test 8 run (Encourage One Another, a piano accompaniment with a
   two-part choir, scanned with Genius Scan; Audiveris split the choir into 12 parts with garbled names, which made
   "Parts I play" confusing; with only Piano ticked it followed much better; turns felt late; page 2 and 8 trouble;
   slow to find them after skipping in practice). Their recording showed the run-through tracked to within about
@@ -86,7 +92,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
 5. **Measure highlighting.** Highlight the measure being played, live. Comes cheaply once step 4 gives measure
    positions.
 
-### Phase B: Practice tools
+### Phase B: Practice tools — steps 6–8 built in Test 9, waiting for the owner's feedback
 
 6. **Practice insights:** which bars were repeated most, and where the pianist hesitated.
 7. **Loop a passage:** mark some bars; the app counts repetitions and shows the tempo of each one.
@@ -122,6 +128,13 @@ Steps are numbered across phases, in order. Work through them in that order unle
   - `fft.js`: radix-2 FFT.
   - `features.js`: microphone samples → 50 frames per second: chroma (12 note names, loudness-compressed), onset
     chroma (notes just struck), `sounding` (music versus the room's learned background), display data.
+  - `practice.js`: `PracticeLog` records every live frame (features, follower position when sure, jump count);
+    `report()` cuts it into runs (a follower jump elsewhere or moving back over 2 s starts a new one; small
+    self-corrections don't), re-aligns each run offline within 1.5 s of the follower's path for exact bar entry times,
+    then gives plays per measure, hesitations (pause ≥ 0.8 s inside a bar, a bar 1.6x slower per beat than the bars
+    around, or the next run starting at or before the bar a run stopped in, except at the loop's end), bar tempos
+    (quarter notes a minute), the longest run and loop repetitions. `report({ refine: false })` skips the re-alignment
+    (used live for the loop counter). `busiestPassages`.
   - `marker.js`: `MeasureMarker` smooths the highlight in played order: one measure forward at once, further forward
     after 0.25 s, back after 0.6 s, at once after a follower jump (`moves`); keeps its measure through 1.5 s unsure.
   - `follower.js`: `makeLesson` (from teaching frames and page turns; long silences squeezed out) and `Follower`:
@@ -186,6 +199,13 @@ Steps are numbered across phases, in order. Work through them in that order unle
   - `python3 tools/synth_performances.py tests/output/perf --sections` then `node tests/sections-eval.js
     tests/output/perf`: teaching in sections (replacement, three overlapping sections, out of order, an untaught gap,
     practice sessions with sections). Currently all pass (14/14 found, 10/10 turns).
+  - `node tests/practice-unit.js`: practice insights from made-up sessions (plays, hesitations, tempo, loop).
+  - `node tests/real-eval.js SCORE.mxl RECORDING.wav --parts 12 --end 139`: a real recording (convert a Voice Memo
+    with ffmpeg to 22.05 kHz mono WAV) that begins with a run-through: truth by offline alignment, the run-through's
+    turns (seconds before each new page's first bar), position error and highlight, then practice sessions cut from it
+    with and without page flips. Never commit the owner's files. On the owner's Encourage One Another (Test 8 run):
+    position error median 0.00 s, highlight 86% right and 99% within a bar, 0 stray changes, practice with flips
+    found in about 1 s (bars 1–9 in 4.9 s, an identical copy of bars 25–33).
   - `node tests/score-unit.js`: reading MusicXML and play order (repeats, endings, D.C., D.S. al Coda, ties, voices).
   - `python3 tools/make_test_scores.py tests/output/scores`: the A A B A piece written with repeats (3 pages) and with
     D.C. al Fine (2 pages) as MusicXML and PDF, and a performance of the sample score. Then run Audiveris on the PDFs
