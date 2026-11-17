@@ -65,7 +65,7 @@ let locked = false; // performance lock: taps and Pencil do nothing, only the pe
 let marksKey = null; // the piece the markings belong to
 const marks = new Marks({
   save: (data) => { if (marksKey) saveLesson(`${marksKey}|marks`, data).catch(() => toast("Couldn't save your markings on this iPad.", 3000)); },
-  enabled: () => !locked && mode !== "replay",
+  enabled: () => !locked && mode !== "replay" && !pinch,
 });
 let setlist = null; // { list: { id, name, items }, index } while playing a setlist
 
@@ -1721,7 +1721,7 @@ function setMarkMode(on) {
   markBar.hidden = !on;
   document.body.classList.toggle("marking", on);
   markBtn.setAttribute("aria-pressed", String(on));
-  if (on) { closePanels(); toast("Marking: write with the Pencil or a finger. Tap Done when finished.", 2500); }
+  if (on) { closePanels(); toast("Marking: write with the Pencil or a finger, pinch to zoom, Move to drag a marking. Tap Done when finished.", 3000); }
   else if (!$("noteInput").hidden) closeNoteInput();
 }
 markBtn.addEventListener("click", () => { setMarkMode(!marks.markMode); backToMusic(); });
@@ -1736,8 +1736,11 @@ function pickTool(kind) {
   $("hlRow").hidden = kind !== "highlight";
   $("digitRow").hidden = kind !== "finger";
   $("stampRow").hidden = kind !== "stamp";
-  $("sizeWrap").hidden = kind === "erase";
-  $("markHint").hidden = kind !== "erase";
+  $("sizeWrap").hidden = kind === "erase" || kind === "move";
+  $("markHint").hidden = kind !== "erase" && kind !== "move";
+  $("markHint").textContent = kind === "move"
+    ? "Drag a marking to move it. Pinch to zoom; with one finger, move around the zoomed page."
+    : "Touch a marking to remove it.";
   drawPenChoice();
   savePen();
 }
@@ -2733,14 +2736,16 @@ const touches = new Map();
 let pinch = null, panning = null;
 const isControl = (e) => e.target.closest && e.target.closest("button, input, label, textarea, select, .floatbar, .unlock, .modebar, .note-input");
 stand.addEventListener("pointerdown", (e) => {
-  if (isControl(e)) return;
+  if (isControl(e) || e.pointerType === "pen") return; // the Pencil writes; fingers zoom
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (touches.size === 2 && !marks.markMode && !locked) {
+  if (touches.size === 2 && !locked) {
     const [a, b] = [...touches.values()];
+    marks.cancelActive(); // in Mark mode the first finger may have begun a stroke: it was the start of a pinch
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, from: { z: zoom.z, x: zoom.x, y: zoom.y, fx: (a.x + b.x) / 2, fy: (a.y + b.y) / 2 } };
     down = null; // not a tap or a swipe
     panning = null;
-  } else if (touches.size === 1 && zoom.z > 1.01 && !marks.markMode && !locked) {
+  } else if (touches.size === 1 && zoom.z > 1.01 && !locked && (!marks.markMode || marks.tool.kind === "move")) {
+    // one finger moves the zoomed page around (in Mark mode, with Move, when it isn't on a marking)
     panning = { x: e.clientX, y: e.clientY, x0: zoom.x, y0: zoom.y };
   }
 }, true);
@@ -2750,7 +2755,7 @@ stand.addEventListener("pointermove", (e) => {
   if (pinch && touches.size >= 2) {
     const [a, b] = [...touches.values()];
     zoomTo(pinch.from.z * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d), (a.x + b.x) / 2, (a.y + b.y) / 2, pinch.from);
-  } else if (panning && touches.size === 1) {
+  } else if (panning && touches.size === 1 && !(marks.active && marks.active.move)) {
     zoom.x = panning.x0 + (e.clientX - panning.x);
     zoom.y = panning.y0 + (e.clientY - panning.y);
     clampZoom();
@@ -2776,6 +2781,7 @@ let down = null;
 stand.addEventListener("pointerdown", (e) => {
   if (e.button > 0 || locked) return;
   if (e.target.closest && e.target.closest("button, input, label, .markbar, .replaybar, .unlock, .modebar")) { down = null; return; } // controls over the music
+  if (pinch || touches.size > 1) { down = null; return; } // two fingers: a pinch
   down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
   stand.focus({ preventScroll: true });
   keepAwake();
@@ -2785,6 +2791,7 @@ stand.addEventListener("pointerup", (e) => {
   const dx = e.clientX - down.x, dy = e.clientY - down.y, dt = performance.now() - down.t;
   down = null;
   if (zoom.z > 1.01 && Math.hypot(dx, dy) >= 14) return; // moving the zoomed page, not a swipe
+  if (marks.markMode && !loopPick) return; // while marking, a touch on the music never turns the page
   if (!settings.tapTurns && !loopPick) return;
   if (Math.abs(dx) > 40 && Math.abs(dx) > 1.5 * Math.abs(dy)) return turn(dx < 0 ? 1 : -1);
   if (Math.hypot(dx, dy) < 14 && dt < 600 && loopPick) return pickLoopBar(e.clientX, e.clientY);

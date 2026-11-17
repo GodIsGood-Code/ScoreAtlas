@@ -108,7 +108,7 @@ export class Marks {
   constructor({ save, enabled = () => true } = {}) {
     this.pages = {};
     this.layers = new Map(); // page -> its canvas on screen
-    this.tool = { kind: "pen", color: INKS.black }; // kind: pen, highlight, text, stamp, finger (digit), erase
+    this.tool = { kind: "pen", color: INKS.black }; // kind: pen, highlight, text, stamp, finger (digit), erase, move
     this.hlColor = HIGHLIGHTS.yellow;
     this.digit = "1";
     this.stamp = "mf";
@@ -250,19 +250,24 @@ export class Marks {
       const at = (ev) => [k.x0 + ((ev.clientX - r.left) / r.width) * (k.x1 - k.x0), k.y0 + ((ev.clientY - r.top) / r.height) * (k.y1 - k.y0), ev.pressure > 0 && ev.pointerType === "pen" ? ev.pressure : 0.5];
       const scale = { x: r.width / (k.x1 - k.x0), y: r.height / (k.y1 - k.y0) }; // screen pixels per page fraction
       const [x, y, p] = at(e);
-      if (this.tool.kind === "finger") {
-        this.add(page, { t: "text", s: this.digit, x, y, c: this.tool.color === INKS.black ? INKS.blue : this.tool.color, z: this.size });
+      const kind = this.tool.kind;
+      // Move: drag the marking under the finger or Pencil (on an empty spot, the page moves instead, when zoomed in)
+      if (kind === "move") {
+        const hit = this.hitAt(page, x, y, scale);
+        if (!hit) { this.active = null; return; } // not ours: the music stand handles it
+        swallow(e);
+        try { root.setPointerCapture(e.pointerId); } catch {}
+        this.active = { id: e.pointerId, page, c, r: scale, at, move: hit, from: JSON.parse(JSON.stringify(hit)), start: [x, y], last: [x, y] };
+        this.drawWith(page, null, hit);
         return;
       }
-      if (this.tool.kind === "stamp") {
-        this.add(page, { t: "stamp", k: this.stamp, x, y, c: this.tool.color, z: this.size });
-        return;
-      }
-      if (this.tool.kind === "text") {
-        if (this.onText) this.onText(page, x, y, e.clientX, e.clientY);
-        return;
-      }
+      swallow(e);
       try { root.setPointerCapture(e.pointerId); } catch {}
+      // stamps, finger numbers and text go where the finger lifts (a second finger turns it into a pinch instead)
+      if (kind === "finger" || kind === "stamp" || kind === "text") {
+        this.active = { id: e.pointerId, page, c, r: scale, at, tap: { x, y, cx: e.clientX, cy: e.clientY, kind } };
+        return;
+      }
       this.active = { id: e.pointerId, page, c, r: scale, at, erased: [] };
       if (this.tool.kind === "erase") { this.eraseAt(this.active, x, y); return; }
       const hl = this.tool.kind === "highlight";
@@ -274,6 +279,14 @@ export class Marks {
       if (!a || e.pointerId !== a.id) return;
       swallow(e);
       if (e.pointerType === "pen") this.lastPen = performance.now();
+      if (a.tap) return;
+      if (a.move) {
+        const [x, y] = a.at(e);
+        this.shift(a.move, x - a.last[0], y - a.last[1]);
+        a.last = [x, y];
+        this.drawWith(a.page, null, a.move);
+        return;
+      }
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       for (const ev of events.length ? events : [e]) {
         const [x, y, p] = a.at(ev);
@@ -292,6 +305,20 @@ export class Marks {
       swallow(e);
       if (e.pointerType === "pen") this.lastPen = performance.now();
       this.active = null;
+      if (a.tap) {
+        const [x, y] = a.at(e), t = a.tap;
+        if (Math.hypot((x - t.x) * a.r.x, (y - t.y) * a.r.y) > 14 || e.type === "pointercancel") return;
+        if (t.kind === "finger") this.add(a.page, { t: "text", s: this.digit, x: t.x, y: t.y, c: this.tool.color === INKS.black ? INKS.blue : this.tool.color, z: this.size });
+        else if (t.kind === "stamp") this.add(a.page, { t: "stamp", k: this.stamp, x: t.x, y: t.y, c: this.tool.color, z: this.size });
+        else if (this.onText) this.onText(a.page, t.x, t.y, t.cx, t.cy);
+        return;
+      }
+      if (a.move) {
+        const moved = Math.hypot((a.last[0] - a.start[0]) * a.r.x, (a.last[1] - a.start[1]) * a.r.y) > 1;
+        if (moved) { this.undoStack.push({ page: a.page, moved: a.move, from: a.from }); this.changed(); }
+        this.draw(a.page);
+        return;
+      }
       if (this.tool.kind === "erase") {
         if (a.erased.length) { this.undoStack.push({ page: a.page, erased: a.erased }); this.changed(); }
         return;
@@ -302,11 +329,73 @@ export class Marks {
     root.addEventListener("pointercancel", end, true);
   }
 
-  // the page as it will look with a stroke still being drawn (for the highlighter, drawn whole each time)
-  drawWith(page, stroke) {
+  // the page as it will look with a stroke still being drawn (for the highlighter, drawn whole each time), or with a
+  // marking being moved outlined
+  drawWith(page, stroke, picked = null) {
     this.draw(page);
     const c = this.layers.get(page);
-    if (c) this.paintOn(c, stroke);
+    if (!c) return;
+    if (stroke) this.paintOn(c, stroke);
+    if (picked) {
+      const b = this.bounds(picked), k = c.crop, ctx = c.getContext("2d");
+      const W = c.width / (k.x1 - k.x0), H = c.height / (k.y1 - k.y0), pad = 6 * (window.devicePixelRatio || 1);
+      ctx.save();
+      ctx.translate(-k.x0 * W, -k.y0 * H);
+      ctx.strokeStyle = "#8a6a1f";
+      ctx.lineWidth = 1.5 * (window.devicePixelRatio || 1);
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(b.x0 * W - pad, b.y0 * H - pad, (b.x1 - b.x0) * W + 2 * pad, (b.y1 - b.y0) * H + 2 * pad);
+      ctx.restore();
+    }
+  }
+
+  // a marking's box on the page (page fractions; roughly, for text and stamps)
+  bounds(s) {
+    if (s.p) {
+      let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+      for (let i = 0; i < s.p.length; i += 3) { x0 = Math.min(x0, s.p[i]); x1 = Math.max(x1, s.p[i]); y0 = Math.min(y0, s.p[i + 1]); y1 = Math.max(y1, s.p[i + 1]); }
+      const h = (s.w || 0) / 2;
+      return { x0: x0 - h, y0: y0 - h, x1: x1 + h, y1: y1 + h };
+    }
+    const z = s.z || 1;
+    if (s.t === "note") {
+      const lines = String(s.s).split("\n"), w = 0.011 * z * Math.max(...lines.map((l) => l.length));
+      return { x0: s.x, y0: s.y, x1: s.x + w, y1: s.y + 0.024 * z * lines.length };
+    }
+    const r = s.t === "stamp" ? 0.03 * z : 0.016 * Math.sqrt(z);
+    return { x0: s.x - r, y0: s.y - r * 0.8, x1: s.x + r, y1: s.y + r * 0.8 };
+  }
+
+  // the topmost marking at (x, y) on a page, within a finger's width (scale: screen pixels per page fraction)
+  hitAt(page, x, y, scale) {
+    const list = this.pages[page] || [];
+    const reach = 16;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const s = list[i];
+      if (s.p) {
+        for (let j = 0; j < s.p.length; j += 3) if (Math.hypot((s.p[j] - x) * scale.x, (s.p[j + 1] - y) * scale.y) < reach + (s.t === "hl" ? 10 : 2)) return s;
+        continue;
+      }
+      const b = this.bounds(s);
+      const dx = Math.max(b.x0 - x, 0, x - b.x1) * scale.x, dy = Math.max(b.y0 - y, 0, y - b.y1) * scale.y;
+      if (Math.hypot(dx, dy) < reach) return s;
+    }
+    return null;
+  }
+
+  shift(s, dx, dy) {
+    if (s.p) for (let i = 0; i < s.p.length; i += 3) { s.p[i] += dx; s.p[i + 1] += dy; }
+    if (s.x !== undefined) { s.x += dx; s.y += dy; }
+  }
+
+  // stop a stroke or tap being made (two fingers came down: it's a pinch)
+  cancelActive() {
+    const a = this.active;
+    if (!a) return;
+    this.active = null;
+    if (a.move) Object.assign(a.move, a.from);
+    if (a.erased && a.erased.length) { this.undoStack.push({ page: a.page, erased: a.erased }); this.changed(); }
+    this.draw(a.page);
   }
 
   // a text note typed at (x, y) on a page
@@ -346,6 +435,7 @@ export class Marks {
     if (u.added) { const i = list.lastIndexOf(u.added); if (i >= 0) list.splice(i, 1); }
     if (u.erased) list.push(...u.erased);
     if (u.cleared) this.pages[u.page] = u.cleared;
+    if (u.moved) Object.assign(u.moved, u.from);
     this.draw(u.page);
     this.changed();
     return true;

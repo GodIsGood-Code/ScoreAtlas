@@ -71,6 +71,46 @@ const PERF = path.join(__dirname, 'output/perf');
   await page.keyboard.press('ArrowLeft');
   await page.waitForFunction(() => document.querySelector('#pageNum').value === '1 / 2');
 
+  // ---------- Mark mode: pinch to zoom (no stroke left behind), Move drags a marking, Undo puts it back ----------
+  const allMarks = () => pt(() => Object.values(window.pageTurner.marks().pages).flat());
+  await page.click('#markBtn');
+  await page.click('[data-tool="stamp"]');
+  await page.click('#stampRow [data-stamp="mf"]');
+  const unit = await page.$eval('#sheet .page canvas', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await page.mouse.click(unit.x + unit.w * 0.4, unit.y + unit.h * 0.5);
+  const placed = (await allMarks()).find((s) => s.t === 'stamp');
+  check('Mark: a tap places a stamp', !!placed);
+  // two fingers in Mark mode (with the pen): a pinch, not a stroke
+  await page.click('[data-tool="pen"]');
+  await pt(({ cx, cy }) => {
+    const target = document.querySelector('#sheet .page canvas');
+    const ev = (type, id, x, y) => target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, isPrimary: id === 11 }));
+    ev('pointerdown', 11, cx - 40, cy); ev('pointerdown', 12, cx + 40, cy);
+    for (let k = 1; k <= 6; k++) { ev('pointermove', 11, cx - 40 - 6 * k, cy); ev('pointermove', 12, cx + 40 + 6 * k, cy); }
+    ev('pointerup', 11, cx - 76, cy); ev('pointerup', 12, cx + 76, cy);
+  }, { cx: unit.x + unit.w * 0.6, cy: unit.y + unit.h * 0.3 });
+  const zm = await pt(() => window.pageTurner.zoom);
+  check('Mark: two fingers zoom in, and draw nothing', zm.z > 1.5 && (await allMarks()).filter((s) => s.t === 'pen').length === 0, `${zm.z.toFixed(2)}x`);
+  await page.click('#zoomReset');
+  await page.waitForTimeout(500);
+  // Move: drag the stamp
+  await page.click('[data-tool="move"]');
+  const u2 = await page.$eval('#sheet .page canvas', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  const sx = u2.x + placed.x * u2.w, sy = u2.y + placed.y * u2.h;
+  await page.mouse.move(sx, sy); await page.mouse.down();
+  await page.mouse.move(sx + 120, sy + 60, { steps: 6 }); await page.mouse.up();
+  const moved = (await allMarks()).find((s) => s.t === 'stamp');
+  check('Move: a stamp can be dragged to a new place', moved && Math.abs((moved.x - placed.x) * u2.w - 120) < 4 && Math.abs((moved.y - placed.y) * u2.h - 60) < 4, moved && `moved ${((moved.x - placed.x) * u2.w).toFixed(0)}, ${((moved.y - placed.y) * u2.h).toFixed(0)} px`);
+  check('Move: dragging doesn\'t turn the page', (await page.textContent('#pageNum')) === '1 / 2');
+  await page.click('#markUndo');
+  const back = (await allMarks()).find((s) => s.t === 'stamp');
+  check('Undo puts a moved marking back', back && Math.abs(back.x - placed.x) < 1e-6 && Math.abs(back.y - placed.y) < 1e-6);
+  await page.mouse.click(u2.x + u2.w * 0.9, u2.y + u2.h * 0.9); // an empty spot with Move: nothing happens
+  check('Move: a tap on an empty spot doesn\'t turn the page', (await page.textContent('#pageNum')) === '1 / 2');
+  await page.click('#markUndo'); // the stamp goes
+  await page.click('[data-tool="pen"]');
+  await page.click('#markDone');
+
   // ---------- Keep this take ----------
   await page.click('#followBtn');
   await page.waitForFunction(() => window.pageTurner.audioTime >= 28, null, { timeout: 60000, polling: 200 });

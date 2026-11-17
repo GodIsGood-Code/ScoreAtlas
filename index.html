@@ -42,13 +42,14 @@
     <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9.5 3.5h5l-1 7h-3z"/><path d="M5 14a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2H5z"/><path d="M5 19.5h14"/></symbol>
     <symbol id="i-finger" viewBox="0 0 24 24"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v5M12 10V4a1.5 1.5 0 0 1 3 0v6M15 10V6a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7h-.5A5.5 5.5 0 0 1 6 17l-2.2-4a1.5 1.5 0 0 1 2.6-1.5L9 14"/></symbol>
     <symbol id="i-eraser" viewBox="0 0 24 24"><path d="M8.5 20H20"/><path d="M4.5 15.5l9-9a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L13 19l-1 1H8.5l-4-4z"/><path d="M9 11l5.5 5.5"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
   </svg>
   <div class="app">
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.3</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.4</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -126,6 +127,7 @@
       <div class="markbar floatbar" id="markBar" hidden role="toolbar" aria-label="Markings">
         <div class="mark-row">
           <span class="tool-group tools" role="group" aria-label="Tool">
+            <button class="btn small tool-btn" type="button" data-tool="move" aria-label="Move markings"><svg class="i"><use href="#i-move"/></svg><span class="tl">Move</span></button>
             <button class="btn small tool-btn" type="button" data-tool="pen" aria-label="Pen"><svg class="i"><use href="#i-pen"/></svg><span class="tl">Pen</span></button>
             <button class="btn small tool-btn" type="button" data-tool="highlight" aria-label="Highlighter"><svg class="i"><use href="#i-hl"/></svg><span class="tl">Highlight</span></button>
             <button class="btn small tool-btn" type="button" data-tool="text" aria-label="Text"><svg class="i"><use href="#i-text"/></svg><span class="tl">Text</span></button>
@@ -308,7 +310,7 @@
       </section>
       <section class="group">
         <h3>About</h3>
-        <p class="note" id="aboutText">ScoreAtlas version 0.5.3 · everything stays on this iPad.</p>
+        <p class="note" id="aboutText">ScoreAtlas version 0.5.4 · everything stays on this iPad.</p>
         <div class="actions">
           <button id="tourAgain" class="btn small" type="button">Show the welcome tour</button>
           <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/privacy.html" target="_blank" rel="noopener">Privacy</a>
@@ -362,7 +364,7 @@
         <p><b>Piece → Edit pages</b>: take out blank pages, change the order, turn sideways scans, or add pages from another PDF. Markings move with their pages.</p>
       </details>
       <details><summary>Apple Pencil</summary>
-        <p>Tap <b>Mark</b> first (so nothing is marked by accident), then write with the Pencil or a finger. Tools: <b>Pen</b> (black, red, blue, or any color from the wheel), <b>Highlight</b>, <b>Text</b> (tap where the note goes, then type), <b>Stamps</b> (dynamics, hairpins, accents, fermata, breath and pedal marks), fingering <b>1–5</b> and the <b>Eraser</b>. The slider sets the size. Tap <b>Done</b> when finished. Markings stay with the piece.</p>
+        <p>Tap <b>Mark</b> first (so nothing is marked by accident), then write with the Pencil or a finger. Tools: <b>Pen</b> (black, red, blue, or any color from the wheel), <b>Highlight</b>, <b>Text</b> (tap where the note goes, then type), <b>Stamps</b> (dynamics, hairpins, accents, fermata, breath and pedal marks; slide the row for more), fingering <b>1–5</b> and the <b>Eraser</b>. The slider sets the size. <b>Move</b> drags any marking to a new place (Undo puts it back). Pinch with two fingers to zoom in for small notes; with Move, one finger moves around the zoomed page. Tap <b>Done</b> when finished. Markings stay with the piece.</p>
       </details>
       <details><summary>View, pedal and performing</summary>
         <ul>
@@ -470,7 +472,13 @@
 
 
       <details class="group whatsnew">
-        <summary>What's new in version 0.5.3</summary>
+        <summary>What's new in version 0.5.4</summary>
+        <ol>
+          <li><b>Move</b> (in Mark): drag a stamp, text, finger number or pen stroke to a new place. Undo puts it back.</li>
+          <li><b>Pinch to zoom while marking</b>, with any tool, to write small and precisely. With Move, one finger moves around the zoomed page.</li>
+          <li>Stamps, finger numbers and text are placed when your finger lifts, so a pinch never leaves one behind.</li>
+        </ol>
+        <p class="note">From version 0.5.3:</p>
         <ol>
           <li><b>Try it right away</b>: the sample piece, Warm-ups, is in your Library with its sheet music. Open it, tap Follow and play.</li>
           <li><b>Practice → History</b>: your last session, listening back, kept takes and the journal, in one place.</li>
