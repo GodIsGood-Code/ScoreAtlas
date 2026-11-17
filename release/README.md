@@ -17,7 +17,7 @@ Everything written so far for the release, and what's left. The app will launch 
 
 1. **Apple Developer account** (the owner is arranging it): $99 a year at developer.apple.com, in the name that
    should appear as the seller.
-2. **Package the web app as an iPad app**: done (Test 17), in `native/` (Capacitor 8; see `native/README.md` for the
+2. **Package the web app as an iPad app**: done (version 0.5.2), in `native/` (Capacitor 8; see `native/README.md` for the
    owner's steps: GitHub Desktop, open `native/ios/App/App.xcodeproj`, pick the team, Run). Still to check on the iPad
    in the packaged app: the microphone permission prompt, the Bluetooth pedal, Apple Pencil, pinch to zoom, opening
    PDFs and MusicXML from Files and AirDrop, Check my notes (speed), and that the library survives restarts.
@@ -36,6 +36,6 @@ Everything written so far for the release, and what's left. The app will launch 
 
 ## Done since the groundwork
 
-- Backup and restore (Settings → Backup), and sharing a setlist with its music (Test 14, Test 16).
-- Wrong-note detection (Test 15), trouble spots, hands separately, hear the music, page tools, stamps and text notes
-  (Test 16).
+- Backup and restore (Settings → Backup), and sharing a setlist with its music (versions 0.4.2 and 0.5.1).
+- Wrong-note detection (0.5), trouble spots, hands separately, hear the music, page tools, stamps and text notes
+  (0.5.1); pinch to zoom and kept takes (0.5.2).

@@ -5,6 +5,18 @@ folder may still be `page-turner`). A web app, iPad first, that shows sheet musi
 The owner is a pianist with little coding experience. Claude writes the code and explains things in plain
 language; the owner tests on their iPad and reports back.
 
+## Versions (the owner's scheme, replacing "Test N")
+
+0.1 was the very first version. Each release adds, by its biggest change: **0.1** for a big change (like Teach, or
+following straight from the sheet music), **0.0.1** for a smaller addition (like the metronome), **0.0.0.1** for bug fixes
+and UI remaps. The App Store launch is **1.0**. Shown in the top bar's tag, Settings → About and "What's new"; the iPad
+app's `MARKETING_VERSION` follows (App Store versions allow at most three numbers, so a fix-only 0.x.y.z release keeps
+the iPad app at 0.x.y with a higher `CURRENT_PROJECT_VERSION`). History, by release: Test 1 (artifact) 0.1 · Test 2
+0.1.1 · Test 3 (Teach and Follow) 0.2 · Test 4 (practice mode) 0.2.1 · Test 5 (sections) 0.2.2 · Test 6 (fixes)
+0.2.2.1 · Test 7 (sheet music) 0.3 · Test 8 0.3.1 · Test 9 0.3.2 and its fixes 0.3.2.1 · Test 10 0.3.3 · Test 11
+(library, Pencil, display, offline) 0.4 · Test 12 (design pass) 0.4.0.1 · Test 13 0.4.1 · Test 14 0.4.2 · Test 15
+(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 **0.5.2** (current). The "Test N" entries below are those releases.
+
 ## Status
 
 - **Test 17:** the two features the owner picked from Claude's short list, and **App Store packaging** (owner has
