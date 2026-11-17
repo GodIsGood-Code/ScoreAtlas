@@ -20,7 +20,8 @@ Everything is already built and kept in git, so a Mac needs only **Xcode**: no N
 3. In Xcode: **Xcode → Settings → Accounts → +** → Apple ID, and sign in (your developer account once you have it; a
    plain Apple ID works too, but then the app stops opening after 7 days until you run it from Xcode again).
 
-**Each time:**
+**Each time:** (GitHub Desktop will list `project.pbxproj` as changed after you pick your Team: that's fine, leave it
+uncommitted.)
 
 4. In Finder, open the project folder, then `native` → `ios` → `App` and double-click **App.xcodeproj**. The first
    time, Xcode downloads Capacitor (a minute; you'll see "Fetching" at the top).
@@ -55,9 +56,9 @@ cd native && npm install && npm run build
 `npm run build` copies the files the website keeps offline (`../sw.js`'s list, plus licenses) into `www/`
 (`copy-web.mjs`) and runs `npx cap sync ios`, which puts them in `ios/App/App/public/`. Commit `ios/App/App/public/`
 with the change. `node tests/native-sim.cjs` (from the repository root) runs the copied app with stand-ins for
-Capacitor. App icon and launch screen: `python3 tools/make_icons.py`. Version: `MARKETING_VERSION` (1.0) and
-`CURRENT_PROJECT_VERSION` (raise it for each upload) in `ios/App/App.xcodeproj/project.pbxproj`, or in Xcode under
-General.
+Capacitor. App icon and launch screen: `python3 tools/make_icons.py`. Version: `CFBundleShortVersionString` and
+`CFBundleVersion` (raise it for each upload) in `ios/App/App/Info.plist`. Don't change `project.pbxproj`: the
+owner's Xcode writes their Team into it, and our edits there would conflict with their copy when they pull.
 
 What's set up: iPad only, all orientations, iOS 15 or later; `Info.plist` has the microphone text, opens PDF,
 MusicXML (.mxl, .musicxml) and `.scoreatlas` files (copied in, not edited in place), and declares no non-exempt

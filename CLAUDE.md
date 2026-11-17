@@ -10,8 +10,10 @@ language; the owner tests on their iPad and reports back.
 0.1 was the very first version. Each release adds, by its biggest change: **0.1** for a big change (like Teach, or
 following straight from the sheet music), **0.0.1** for a smaller addition (like the metronome), **0.0.0.1** for bug fixes
 and UI remaps. The App Store launch is **1.0**. Shown in the top bar's tag, Settings → About and "What's new"; the iPad
-app's `MARKETING_VERSION` follows (App Store versions allow at most three numbers, so a fix-only 0.x.y.z release keeps
-the iPad app at 0.x.y with a higher `CURRENT_PROJECT_VERSION`). History, by release: Test 1 (artifact) 0.1 · Test 2
+app's version is set in `native/ios/App/App/Info.plist` (`CFBundleShortVersionString`, and `CFBundleVersion`, the build
+number: raise it for every upload; App Store versions allow at most three numbers, so a fix-only 0.x.y.z release keeps
+the iPad app at 0.x.y with a higher build number). Never edit `project.pbxproj` for versions: Xcode writes the owner's
+Team into it, and their local copy then conflicts with our changes when they pull (happened at 0.5.4.1). History, by release: Test 1 (artifact) 0.1 · Test 2
 0.1.1 · Test 3 (Teach and Follow) 0.2 · Test 4 (practice mode) 0.2.1 · Test 5 (sections) 0.2.2 · Test 6 (fixes)
 0.2.2.1 · Test 7 (sheet music) 0.3 · Test 8 0.3.1 · Test 9 0.3.2 and its fixes 0.3.2.1 · Test 10 0.3.3 · Test 11
 (library, Pencil, display, offline) 0.4 · Test 12 (design pass) 0.4.0.1 · Test 13 0.4.1 · Test 14 0.4.2 · Test 15
