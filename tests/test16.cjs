@@ -90,7 +90,8 @@ const ORIGIN = 'http://localhost:8765';
 
   // ---------- Notes over time in the journal ----------
   await menu();
-  await page.click('#journalBtn');
+  await page.click('#historyBtn');
+  await page.click('#historyTabs [data-tab=journal]');
   await page.waitForFunction(() => /Notes over time/.test(document.querySelector('#journalBody').textContent), null, { timeout: 5000 }).catch(() => {});
   const jt = await page.textContent('#journalBody');
   check('the journal shows notes over time', /10\.0 in 100 notes in your first check, 4\.2 in your latest/.test(jt) && /Fixed: bar 13/.test(jt), (jt.match(/Missed or wrong[^.]*\./) || [''])[0]);

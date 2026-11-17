@@ -21,11 +21,18 @@ const ORIGIN = 'http://localhost:8765';
     window.__native = [];
     window.Capacitor = { isNativePlatform: () => true, convertFileSrc: (u) => u };
     window.webkit = { messageHandlers: { scoreAtlas: { postMessage: (m) => window.__native.push(m) } } };
+    try { localStorage.setItem('pt-test-sample', '1'); } catch {} // a first launch: the sample with its sheet music
   });
   const results = [];
   const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  (' + extra + ')' : ''}`);
   await page.goto(`${ORIGIN}/`);
   await page.waitForFunction(() => /\d+ \/ \d+/.test(document.querySelector('#pageNum').value), null, { timeout: 15000 });
+  const ready = await page.waitForFunction(() => /Sheet music: 64 measures on 4 pages/.test(document.querySelector('#lessonInfo').textContent), null, { timeout: 60000 }).then(() => true, () => false);
+  check('first launch: the sample has its sheet music, ready to follow', ready && (await page.getAttribute('#followBtn', 'data-ready')) === 'true', await page.textContent('#lessonInfo'));
+  await page.click('#libraryBtn');
+  await page.waitForSelector('.lib-piece', { timeout: 5000 }).catch(() => {});
+  check('... and it is in the library', (await page.$$('.lib-piece[aria-label="Open Sample: Warm-ups"]')).length === 1, (await page.$$eval('.lib-piece', (x) => x.map((e) => e.getAttribute('aria-label')))).join(', '));
+  await page.keyboard.press('Escape');
   const msgs = await page.evaluate(() => window.__native);
   check('the app opens from the copied files (sample piece)', (await page.textContent('#pageNum')) === '1 / 4');
   check('it tells the app it is ready, and asks to keep the screen on', msgs.some((m) => m.ready) && msgs.some((m) => m.keepAwake === true), JSON.stringify(msgs));

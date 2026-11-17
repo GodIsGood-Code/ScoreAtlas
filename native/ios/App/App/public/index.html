@@ -48,7 +48,7 @@
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.2</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.3</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -86,12 +86,8 @@
               <button id="hearBtn" class="menu-item" type="button"><svg class="i"><use href="#i-speaker"/></svg><span><b>Hear the music</b><small>Played from this page, at any speed</small></span></button>
               <button id="openMetro" class="menu-item" type="button"><svg class="i"><use href="#i-metro"/></svg><span><b>Metronome</b><small>Any meter; a tempo ladder for loops</small></span></button>
             </div>
-            <p class="menu-title">Your practice</p>
-            <div class="menu-list">
-              <button id="reportBtn" class="menu-item" type="button" hidden><svg class="i"><use href="#i-target"/></svg><span><b>Last session's report</b><small>Bars, hesitations, tempo, notes</small></span></button>
-              <button id="replayCardBtn" class="menu-item" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span><b>Listen back</b><small>Your last session, with the pages following</small></span></button>
-              <button id="takesBtn" class="menu-item" type="button"><svg class="i"><use href="#i-play"/></svg><span><b>Kept takes</b><small>Recordings you saved, to listen to or share</small></span></button>
-              <button id="journalBtn" class="menu-item" type="button"><svg class="i"><use href="#i-book"/></svg><span><b>Practice journal</b><small>Your practice across days</small></span></button>
+            <div class="menu-list menu-split">
+              <button id="historyBtn" class="menu-item" type="button"><svg class="i"><use href="#i-book"/></svg><span><b>History</b><small>Your last session, listening back, kept takes and the journal</small></span></button>
             </div>
             <p class="note" id="practiceNote">Tools that need sheet music (loops, trouble spots, hearing the music, hands) wake up once the piece has it.</p>
           </div>
@@ -228,25 +224,25 @@
       <div class="lib-body"></div>
     </aside>
 
-    <aside class="panel side report" id="report" aria-label="Practice report" hidden>
+    <aside class="panel side report" id="report" aria-label="Practice history" hidden>
       <div class="panel-head report-head">
-        <h2>Practice report</h2>
+        <div><p class="eyebrow" id="historyPiece">This piece</p><h2>Practice history</h2></div>
         <span class="report-buttons">
           <button id="replayBtn" class="btn small" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span>Listen back</span></button>
           <button id="reportClose" class="btn icon flat" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
         </span>
       </div>
-      <div id="reportBody"></div>
-      <label class="heat-toggle"><input id="heatToggle" type="checkbox" checked> Tint the bars on the page by how often you played them</label>
+      <div class="segmented history-tabs" id="historyTabs" role="group" aria-label="Show">
+        <button type="button" data-tab="session" aria-pressed="true">Last session</button><button type="button" data-tab="takes" aria-pressed="false">Kept takes</button><button type="button" data-tab="journal" aria-pressed="false">Journal</button>
+      </div>
+      <div class="history-tab" data-tab="session">
+        <div id="reportBody"></div>
+        <label class="heat-toggle" id="heatWrap"><input id="heatToggle" type="checkbox" checked> Tint the bars on the page by how often you played them</label>
+      </div>
+      <div class="history-tab" data-tab="takes" hidden><div id="takesBody"></div></div>
+      <div class="history-tab" data-tab="journal" hidden><div id="journalBody"></div></div>
     </aside>
 
-    <aside class="panel side" id="journalPanel" aria-label="Practice journal" hidden>
-      <div class="panel-head">
-        <div><p class="eyebrow">Practice journal</p><h2 id="journalTitle">This piece</h2></div>
-        <button class="btn icon flat panel-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
-      </div>
-      <div id="journalBody"></div>
-    </aside>
 
     <aside class="panel side" id="troublePanel" aria-label="Trouble spots" hidden>
       <div class="panel-head">
@@ -257,13 +253,6 @@
       <div id="troubleBody"></div>
     </aside>
 
-    <aside class="panel side" id="takesPanel" aria-label="Kept takes" hidden>
-      <div class="panel-head">
-        <div><p class="eyebrow">Practice</p><h2>Kept takes</h2></div>
-        <button class="btn icon flat panel-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
-      </div>
-      <div id="takesBody"></div>
-    </aside>
 
     <aside class="panel library pages-panel" id="pagesPanel" aria-label="Edit pages" hidden>
       <div class="panel-head lib-head">
@@ -319,7 +308,7 @@
       </section>
       <section class="group">
         <h3>About</h3>
-        <p class="note" id="aboutText">ScoreAtlas version 0.5.2 · everything stays on this iPad.</p>
+        <p class="note" id="aboutText">ScoreAtlas version 0.5.3 · everything stays on this iPad.</p>
         <div class="actions">
           <button id="tourAgain" class="btn small" type="button">Show the welcome tour</button>
           <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/privacy.html" target="_blank" rel="noopener">Privacy</a>
@@ -338,6 +327,7 @@
           <li>Tap the piece's name at the top left to open your <b>Library</b>, then <b>Add music</b>: a PDF (scans and photos of music work), with its sheet music file if you have one.</li>
           <li>Tap <b>Piece</b> and either <b>Add sheet music</b> (a MusicXML file) or <b>Teach</b> it.</li>
           <li>Tap <b>Follow</b> and play. The first time, allow the microphone.</li>
+          <li>To try it straight away: the sample piece, <b>Warm-ups</b>, already has its sheet music. Open it from the Library, tap Follow and play from any page.</li>
         </ol>
       </details>
       <details><summary>Sheet music (MusicXML)</summary>
@@ -387,12 +377,26 @@
       <details><summary>Something isn't working</summary>
         <ul>
           <li><b>No pages turn:</b> the piece needs sheet music or one taught playthrough (see Piece).</li>
-          <li class="web-only"><b>The microphone is off:</b> in Safari, tap <b>aA → Website Settings → Microphone → Allow</b>, then reload. <b>Piece → Check microphone</b> shows the notes it hears.</li>
-          <li class="app-only"><b>The microphone is off:</b> open the iPad's <b>Settings → ScoreAtlas</b> and turn on <b>Microphone</b>. <b>Piece → Check microphone</b> shows the notes it hears.</li>
+          <li class="web-only"><b>The microphone is off:</b> in Safari, tap <b>aA → Website Settings → Microphone → Allow</b>, then reload. <b>Check the microphone and the pedal</b> (below) shows the notes it hears.</li>
+          <li class="app-only"><b>The microphone is off:</b> open the iPad's <b>Settings → ScoreAtlas</b> and turn on <b>Microphone</b>. <b>Check the microphone and the pedal</b> (below) shows the notes it hears.</li>
           <li><b>Turns feel late or early:</b> <b>Settings → Turn pages</b>.</li>
           <li><b>It loses you in a passage:</b> turn to the page you're playing (it then stays there), or teach just that passage (<b>Piece → Teach</b>); taught sections are used where they fit better.</li>
           <li><b>Check my notes flags a note you played:</b> very soft notes can go unheard, and the sheet music reader sometimes misreads a note. If the same note is flagged every time, the reading is probably wrong there.</li>
         </ul>
+      </details>
+      <details id="micCheck"><summary>Check the microphone and the pedal</summary>
+        <p>Tap <b>Check microphone</b> and play: the note names light up as ScoreAtlas hears them. Press your pedal: its keys appear below.</p>
+      <div class="ear" aria-label="Notes the app hears">
+        <div class="ear-head">
+          <b>Microphone</b>
+          <button id="micBtn" class="btn small" type="button" aria-pressed="false">Check microphone</button>
+        </div>
+        <p class="heard"><span class="label">Hearing:</span> <b id="earHeard"></b></p>
+        <div class="keys" id="earKeys"></div>
+        <div class="level" aria-hidden="true"><i id="earLevel"></i></div>
+        <p class="note" id="earNote" hidden></p>
+        <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
+      </div>
       </details>
       <div class="actions"><button id="helpTour" class="btn small" type="button">Show the welcome tour</button></div>
     </aside>
@@ -402,7 +406,7 @@
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-book"/></svg></span><h2>Welcome to ScoreAtlas</h2><p>Your sheet music on iPad, with pages that turn by themselves while you play.</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-plus"/></svg></span><h2>Bring your music</h2><p>Tap the piece's name at the top left to open your Library, then <b>Add music</b>. Scans and photos of music work; add the sheet music file with it if you have one.</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-piece"/></svg></span><h2>Teach it, or add the sheet music</h2><p>Under <b>Piece</b>: add the piece's MusicXML file and ScoreAtlas follows it right away, or <b>Teach</b> it by playing it once while turning the pages yourself.</p></div>
-        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-mic"/></svg></span><h2>Tap Follow and play</h2><p>The bar you're playing lights up, and the page turns just before you need it. Stop, repeat, skip around: it keeps up. Your Bluetooth pedal works too.</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-mic"/></svg></span><h2>Tap Follow and play</h2><p>The bar you're playing lights up, and the page turns just before you need it. Stop, repeat, skip around: it keeps up. Try it now on the sample piece, Warm-ups: its sheet music is ready.</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-loop"/></svg></span><h2>Practice with purpose</h2><p>The <b>Practice</b> menu: loop a passage, work on your trouble spots, practice hands separately, hear the music, use the metronome. Write fingerings and markings with Apple Pencil (tap <b>Mark</b> first).</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-lock"/></svg></span><h2>Ready for the stage</h2><p>Setlists, two pages side by side, half-page turns and a lock for performing. Everything stays on your iPad and works offline.</p><p class="note">When you first tap Follow, allow the microphone.</p></div>
         <div class="tour-dots" id="tourDots" aria-hidden="true"></div>
@@ -464,20 +468,16 @@
         </div>
       </section>
 
-      <section class="group ear" aria-label="Notes the app hears">
-        <div class="ear-head">
-          <h3>Microphone</h3>
-          <button id="micBtn" class="btn small" type="button" aria-pressed="false">Check microphone</button>
-        </div>
-        <p class="heard"><span class="label">Hearing:</span> <b id="earHeard"></b></p>
-        <div class="keys" id="earKeys"></div>
-        <div class="level" aria-hidden="true"><i id="earLevel"></i></div>
-        <p class="note" id="earNote" hidden></p>
-        <p class="seen">Pedal keys received: <span id="keysSeen">none yet</span></p>
-      </section>
 
       <details class="group whatsnew">
-        <summary>What's new in version 0.5.2</summary>
+        <summary>What's new in version 0.5.3</summary>
+        <ol>
+          <li><b>Try it right away</b>: the sample piece, Warm-ups, is in your Library with its sheet music. Open it, tap Follow and play.</li>
+          <li><b>Practice → History</b>: your last session, listening back, kept takes and the journal, in one place.</li>
+          <li><b>More stamps</b>: ppp to fff, fp, sf, rf, cresc., dim., rit., accel., a tempo, marcato, trill, mordent, turn, arpeggio, 8va and 8vb, una corda, tre corde, segno and coda. Slide the row sideways to see them all.</li>
+          <li>The microphone check moved to <b>Help → Check the microphone and the pedal</b>.</li>
+        </ol>
+        <p class="note">From version 0.5.2:</p>
         <ol>
           <li><b>Pinch to zoom</b>: two fingers on the music zoom in; one finger moves the page around; <b>Whole page</b> (bottom right) goes back. Pages turn as usual and show from their top.</li>
           <li><b>Keep this take</b>: after a session, keep its recording with the piece (in the practice report, or while listening back). <b>Practice → Kept takes</b>: play them with the bar highlighted, rename, share or delete.</li>

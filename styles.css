@@ -573,3 +573,24 @@ a.btn { text-decoration: none; }
 
 /* the App Store app (see native/) and the website each have a few instructions of their own */
 .native .web-only, :root:not(.native) .app-only { display: none !important; }
+
+/* ---------- 0.5.3: the history tabs, the stamps that scroll sideways, the microphone check in Help ---------- */
+.history-tabs { justify-self: stretch; display: flex; }
+.history-tabs button { flex: 1; }
+.history-tab { display: grid; gap: 10px; }
+.menu-split { padding-top: 8px; border-top: 1px solid var(--line); margin-top: 2px; }
+.mark-row.options .stamps {
+  flex: 1 1 100%; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; touch-action: pan-x;
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: 2px 2px 6px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.mark-row.options .stamps:not([hidden]) { border-left: 0; padding-left: 2px; }
+.stamp-btn { scroll-snap-align: start; width: 54px; }
+.stamp-btn canvas { width: 46px; height: 24px; }
+.help .ear { display: grid; gap: 8px; margin: 6px 0 8px; }
+.help .ear-head { display: flex; align-items: center; justify-content: space-between; }
+.markbar { flex-wrap: nowrap; } /* one column: each row is as wide as the toolbar, so the stamps scroll inside it */
+.markbar .mark-row { min-width: 0; }
+.stamp-btn { width: 66px; height: 42px; }
+.stamp-btn canvas { width: 60px; height: 31px; }

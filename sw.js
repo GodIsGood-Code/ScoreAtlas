@@ -1,7 +1,7 @@
 // Keeps the app on the iPad so it works without Wi-Fi (at a venue, say). The PDFs, lessons and markings are already
 // on the iPad (store.js); this keeps the app's own files. Online, the newest version is always fetched (so updates show
 // at once); offline, or when the network is slow, the kept copy is used. The big PDF reader files are kept as they are.
-const CACHE = "page-turner-v3";
+const CACHE = "page-turner-v4";
 const FILES = [
   "./", "index.html", "styles.css", "app.js", "listen.js", "store.js", "marks.js", "library.js", "share.js", "journal.js", "metronome.js", "pitch.js", "engine/notecheck.js", "pages.js", "importer.js", "engine/trouble.js",
   "audio/capture-worklet.js",
@@ -9,7 +9,7 @@ const FILES = [
   "engine/practice.js", "engine/recorder.js", "engine/score.js", "engine/scorelesson.js", "engine/search.js",
   "engine/synth.js", "engine/xml.js",
   "vendor/pdfjs/pdf.min.mjs", "vendor/pdfjs/pdf.worker.min.mjs", "vendor/fflate/fflate.js", "vendor/fonts/fonts.css", "vendor/fonts/atkinson-hyperlegible-latin-400-normal.woff2", "vendor/fonts/atkinson-hyperlegible-latin-700-normal.woff2", "vendor/fonts/fraunces-latin-600-normal.woff2", "vendor/fonts/ibm-plex-mono-latin-500-normal.woff2", "vendor/pdf-lib/pdf-lib.esm.min.js", "vendor/tfjs/tf.min.js", "vendor/basic-pitch/inference.js", "vendor/basic-pitch/toMidi.js", "vendor/basic-pitch/model.json", "vendor/basic-pitch/group1-shard1of1.bin",
-  "samples/warm-ups.pdf", "privacy.html", "support.html", "doc.css", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
+  "samples/warm-ups.pdf", "samples/warm-ups.musicxml", "privacy.html", "support.html", "doc.css", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (e) => {

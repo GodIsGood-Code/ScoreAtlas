@@ -29,7 +29,7 @@ const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const native = (msg) => { try { window.webkit.messageHandlers.scoreAtlas.postMessage(msg); } catch { /* not in the app */ } };
 if (NATIVE) document.documentElement.classList.add("native");
-const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
+const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups", score: "samples/warm-ups.musicxml" };
 
 const $ = (id) => document.getElementById(id);
 const stand = $("stand"), sheet = $("sheet"), pageNum = $("pageNum");
@@ -46,7 +46,8 @@ const smoother = new MeasureMarker(FRAME_RATE / 2); // drawn every other frame
 // loop outlines and the practice "heat" on the bars, drawn over the page
 const overlay = document.createElement("div");
 overlay.className = "overlay";
-const loopBtn = $("loopBtn"), reportPanel = $("report"), reportBtn = $("reportBtn");
+const loopBtn = $("loopBtn"), reportPanel = $("report");
+let historyTab = "session"; // the Practice history panel's tab: session, takes or journal
 let practice = null; // PracticeLog while following with sheet music
 let sessionHands = "both";
 let lastReport = null; // the most recent session's report
@@ -602,7 +603,7 @@ window.pageTurner = {
 function onFrame(frame) {
   lastFrameTime = frame.time;
   const heard = hearing.update(frame);
-  if (!card.hidden) drawEar(heard); // no need to redraw the note display while it's hidden
+  if (!$("helpPanel").hidden && $("micCheck").open) drawEar(heard); // no need to redraw the note display while it's hidden
   if (mode === "teach" && teach) {
     teach.frames.push({ chroma: frame.chroma, onset: frame.onset, sounding: frame.sounding });
     if (teach.frames.length % 25 === 0) updateModebar();
@@ -671,9 +672,7 @@ function updateButtons() {
   $("practiceNote").hidden = placed;
   $("practiceDot").hidden = !(loop || hands !== "both" || hear);
   $("replayBtn").hidden = !lastRecording;
-  $("replayCardBtn").hidden = !lastRecording || mode !== "idle";
   $("hearBtn").querySelector("b").textContent = hear ? "Stop the music" : "Hear the music";
-  reportBtn.hidden = !lastReport;
   micBtn.textContent = micCheck ? "Stop" : "Check microphone";
   micBtn.setAttribute("aria-pressed", String(micCheck));
 }
@@ -825,7 +824,7 @@ function drawOverlay() {
   const sec = scoreSectionOf();
   if (!sec || !sec.layout || !shown.length) return;
   const here = (m) => entryFor(sec.layout[m]);
-  if (lastReport && heatOn && !reportPanel.hidden) {
+  if (lastReport && heatOn && !reportPanel.hidden && historyTab === "session") {
     const most = Math.max(1, ...lastReport.plays.values());
     for (const [m, count] of lastReport.plays) {
       if (!here(m)) continue;
@@ -838,7 +837,7 @@ function drawOverlay() {
       overlay.append(el);
     }
   }
-  if (lastReport && lastReport.notecheck && !reportPanel.hidden) {
+  if (lastReport && lastReport.notecheck && !reportPanel.hidden && historyTab === "session") {
     for (const [m, v] of lastReport.notecheck.byMeasure) {
       const n = v.missed + v.wrong;
       if (!n || !here(m)) continue;
@@ -954,12 +953,36 @@ function finishPractice() {
 }
 
 function setReport(open) {
-  if (open) closePanels("report");
+  if (open) { closePanels("report"); setHistoryTab("session"); }
   reportPanel.hidden = !open;
   drawOverlay();
   updateButtons();
 }
-reportBtn.addEventListener("click", () => { renderReport(); setReport(true); });
+// Practice history: the last session's report, kept takes and the journal, as tabs of one panel
+function setHistoryTab(tab) {
+  historyTab = tab;
+  for (const b of $("historyTabs").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
+  for (const d of reportPanel.querySelectorAll(".history-tab")) d.hidden = d.dataset.tab !== tab;
+  $("historyPiece").textContent = state.pdf ? fileName.textContent : "This piece";
+  $("replayBtn").hidden = tab !== "session" || !lastRecording || !(lastReport && lastRecording.log === lastReport.log);
+  if (tab === "session") {
+    if (lastReport) renderReport();
+    else {
+      $("reportBody").replaceChildren(el("p", "note", "No session yet. Tap Follow, play, and tap Stop: the report of your session shows here (bars you practiced most, where you hesitated, your tempo, and Check my notes)."));
+    }
+    $("heatWrap").hidden = !lastReport;
+  } else if (tab === "takes") showTakes();
+  else showJournal();
+  drawOverlay();
+}
+function openHistory(tab) {
+  closePanels("report");
+  reportPanel.hidden = false;
+  setHistoryTab(tab || (lastReport ? "session" : "journal"));
+  updateButtons();
+}
+for (const b of $("historyTabs").querySelectorAll("button")) b.addEventListener("click", () => setHistoryTab(b.dataset.tab));
+$("historyBtn").addEventListener("click", () => openHistory());
 
 function renderReport() {
   const r = lastReport;
@@ -1346,7 +1369,6 @@ rpSeek.addEventListener("input", () => {
 });
 $("rpClose").addEventListener("click", () => { stopReplay(); backToMusic(); });
 $("replayBtn").addEventListener("click", () => startReplay(0));
-$("replayCardBtn").addEventListener("click", () => { closePanels(); startReplay(0); });
 // play from a moment (engine clock) of the last session, a second early
 function replayFromClock(t) {
   if (!lastRecording) return;
@@ -1391,7 +1413,6 @@ async function keepTake() {
   }
 }
 async function showTakes() {
-  openPanel("takesPanel");
   const body = $("takesBody");
   body.textContent = "";
   const key = state.key;
@@ -1454,9 +1475,7 @@ async function shareTake(id) {
   if (!R) return;
   await shareFile(wavFile(R.samples, R.rate), `${fileName.textContent} - ${R.name.replace(/[\\/:*?"<>|]+/g, " ")}.wav`, "audio/wav");
 }
-$("takesBtn").addEventListener("click", () => showTakes());
 $("rpKeep").addEventListener("click", () => keepTake());
-makeMovable($("takesPanel"), $("takesPanel").querySelector(".panel-head"), "pt-takes-place");
 
 const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps
 
@@ -1534,7 +1553,7 @@ async function addScore(bytes, name, options = {}) {
         ? ` Note: your bar numbers give ${plural(score.pages, "page")}, the PDF has ${plural(state.count, "page")}.`
         : ` Note: the sheet music has ${plural(score.pages, "page")}, the PDF ${plural(state.count, "page")}. If pages turn at the wrong places, type the first bar of each page under Sheet music options.`;
     }
-    toast(`Sheet music ready: ${plural(score.measures.length, "measure")}. Tap Follow and play.${note}`, note ? 8000 : 4500);
+    if (!options.quiet) toast(`Sheet music ready: ${plural(score.measures.length, "measure")}. Tap Follow and play.${note}`, note ? 8000 : 4500);
     keepData();
     saveLesson(state.key, state.lesson).catch(() => toast("Couldn't save the sheet music on this iPad.", 3000));
   } catch (err) {
@@ -1764,7 +1783,7 @@ for (const [k, label] of STAMPS) {
   b.setAttribute("aria-label", label);
   b.title = label;
   const c = document.createElement("canvas");
-  c.width = 72; c.height = 48;
+  c.width = 92; c.height = 48;
   b.append(c);
   b.addEventListener("click", () => { marks.stamp = k; drawPenChoice(); savePen(); });
   $("stampRow").append(b);
@@ -1774,7 +1793,7 @@ function drawStampButtons() {
   for (const b of $("stampRow").querySelectorAll("button")) {
     const c = b.querySelector("canvas"), ctx = c.getContext("2d");
     ctx.clearRect(0, 0, c.width, c.height);
-    drawStamp(ctx, b.dataset.stamp, c.width / 2, c.height / 2, 15, ink);
+    drawStamp(ctx, b.dataset.stamp, c.width / 2, c.height / 2, b.dataset.stamp.length > 4 ? 13 : 16, ink);
   }
 }
 drawStampButtons();
@@ -1825,7 +1844,7 @@ document.addEventListener("pointerdown", (e) => {
   if (!practiceMenu.hidden && !practiceMenu.contains(e.target) && !$("practiceBtn").contains(e.target)) { practiceMenu.hidden = true; $("practiceBtn").setAttribute("aria-expanded", "false"); }
 });
 // the menu's buttons do their thing and close it
-for (const id of ["loopBtn", "troubleBtn", "hearBtn", "openMetro", "reportBtn", "replayCardBtn", "journalBtn", "takesBtn"]) {
+for (const id of ["loopBtn", "troubleBtn", "hearBtn", "openMetro", "historyBtn"]) {
   $(id).addEventListener("click", () => { practiceMenu.hidden = true; $("practiceBtn").setAttribute("aria-expanded", "false"); });
 }
 
@@ -2402,14 +2421,11 @@ window.scoreAtlasOpen = async (url, name) => {
 if (NATIVE) native({ ready: true });
 
 /* ---------- Practice journal ---------- */
-$("journalBtn").addEventListener("click", async () => {
-  openPanel("journalPanel");
-  $("journalTitle").textContent = fileName.textContent;
+async function showJournal() {
   const sec = scoreSectionOf();
   const data = state.key ? await loadLesson(`${state.key}|practice`) : null;
   renderJournal($("journalBody"), (data && data.sessions) || [], (m) => (sec ? barName(sec, m) : String(m + 1)));
-});
-makeMovable($("journalPanel"), $("journalPanel").querySelector(".panel-head"), "pt-journal-place");
+}
 
 /* ---------- Backup and restore ---------- */
 $("backupSave").addEventListener("click", async () => {
@@ -2597,9 +2613,12 @@ function showMicProblem(err) {
   } else if (name === "NotFoundError" || name === "OverconstrainedError") text = "No microphone was found on this device.";
   else if (name === "NotReadableError") text = "Another app is using the microphone. Close it, then try again.";
   else if (name === "NotSupportedError") text = "This page can't reach the microphone here. Open the app at its own web address in Safari.";
+  if (NATIVE && (name === "NotAllowedError" || name === "SecurityError")) text = "Microphone access is off for ScoreAtlas. Open the iPad's Settings, tap ScoreAtlas, and turn on Microphone.";
   earNote.textContent = text;
   earNote.hidden = false;
-  setCard(true);
+  openPanel("helpPanel");
+  $("micCheck").open = true;
+  $("micCheck").scrollIntoView({ block: "nearest" });
   clearEar();
 }
 
@@ -2783,7 +2802,7 @@ $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
 $("libraryBtn").addEventListener("click", () => { closePanels("library"); library.open(); });
 // Only one panel at a time (and the View menu closes too)
 function closePanels(except) {
-  for (const id of ["settingsPanel", "helpPanel", "journalPanel", "troublePanel", "takesPanel"]) if (except !== id) $(id).hidden = true;
+  for (const id of ["settingsPanel", "helpPanel", "troublePanel"]) if (except !== id) $(id).hidden = true;
   if (except !== "pages" && pageEditor.isOpen) pageEditor.close();
   practiceMenu.hidden = true;
   $("practiceBtn").setAttribute("aria-expanded", "false");
@@ -2801,11 +2820,9 @@ window.addEventListener("keydown", (e) => {
   else if (!viewMenu.hidden) viewMenu.hidden = true;
   else if (pageEditor.isOpen) pageEditor.close();
   else if (!$("troublePanel").hidden) $("troublePanel").hidden = true;
-  else if (!$("takesPanel").hidden) $("takesPanel").hidden = true;
   else if (!$("tour").hidden) endTour();
   else if (!$("settingsPanel").hidden) $("settingsPanel").hidden = true;
   else if (!$("helpPanel").hidden) $("helpPanel").hidden = true;
-  else if (!$("journalPanel").hidden) $("journalPanel").hidden = true;
   else if (!$("gotoMenu").hidden) $("gotoMenu").hidden = true;
   else if (library.isOpen) library.close();
   else if (!reportPanel.hidden) setReport(false);
@@ -2840,6 +2857,25 @@ async function keepAwake() {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 
+// First launch: the sample goes into the library with its sheet music, so Follow works on it straight away
+// (tests skip this unless they ask for it, so they start from an empty library)
+async function addSample(pdfBytes) {
+  let seeded = false;
+  try { seeded = localStorage.getItem("pt-sample-added") === "1"; } catch {}
+  if (navigator.webdriver) { try { if (localStorage.getItem("pt-test-sample") !== "1") return; } catch { return; } }
+  if (seeded || state.lesson) return;
+  try {
+    const res = await fetch(SAMPLE.score);
+    if (!res.ok) return;
+    const xml = new Uint8Array(await res.arrayBuffer());
+    await rememberPiece(`${SAMPLE.name}.pdf`, pdfBytes);
+    const meta = await loadMeta(state.key);
+    if (meta) { meta.name = SAMPLE.name; await putMeta(meta); }
+    await addScore(xml, "warm-ups.musicxml", { quiet: true });
+    if (scoreSectionOf()) { try { localStorage.setItem("pt-sample-added", "1"); } catch {} }
+  } catch { /* the sample still opens, only without its sheet music */ }
+}
+
 /* ---------- Start: reopen the last piece, or the sample ---------- */
 updateCounter();
 updateButtons();
@@ -2858,7 +2894,8 @@ clearEar();
     const res = await fetch(SAMPLE.url);
     if (!res.ok) throw new Error(String(res.status));
     const data = new Uint8Array(await res.arrayBuffer());
-    if (openToken === before) await openPdf(data, SAMPLE.name);
+    const copy = data.slice();
+    if (openToken === before && (await openPdf(data, SAMPLE.name))) await addSample(copy);
   } catch {
     if (state.pdf || openToken !== before) return;
     fileName.textContent = "No PDF open";

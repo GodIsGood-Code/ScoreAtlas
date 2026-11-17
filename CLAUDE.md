@@ -15,10 +15,25 @@ the iPad app at 0.x.y with a higher `CURRENT_PROJECT_VERSION`). History, by rele
 0.1.1 · Test 3 (Teach and Follow) 0.2 · Test 4 (practice mode) 0.2.1 · Test 5 (sections) 0.2.2 · Test 6 (fixes)
 0.2.2.1 · Test 7 (sheet music) 0.3 · Test 8 0.3.1 · Test 9 0.3.2 and its fixes 0.3.2.1 · Test 10 0.3.3 · Test 11
 (library, Pencil, display, offline) 0.4 · Test 12 (design pass) 0.4.0.1 · Test 13 0.4.1 · Test 14 0.4.2 · Test 15
-(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 **0.5.2** (current). The "Test N" entries below are those releases.
+(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 0.5.2 · **0.5.3** (current). The "Test N" entries below are those releases.
 
 ## Status
 
+- **0.5.3:** the owner's picks from Claude's clutter review. **Practice → History**: the report panel (`#report`) became
+  "Practice history" with tabs (`#historyTabs`, `historyTab`, `setHistoryTab`, `openHistory`): Last session (the
+  report; heat tints and note badges show only on this tab), Kept takes (`showTakes` renders into `#takesBody`) and
+  Journal (`showJournal`); Stop opens it on Last session; the journal and takes panels and the menu's report /
+  listen back / takes / journal items are gone (Listen back sits in the panel's head). **Microphone check** moved from
+  the Piece panel to Help → "Check the microphone and the pedal" (`#micCheck`; drawn only while open; a microphone
+  problem opens it, with app-specific wording in the iPad app). **Stamps**: the owner wanted more, not fewer: 41
+  (`STAMPS`: ppp…fff, fp, sf, sfz, rf, hairpins, cresc./dim./rit./accel./a tempo/una corda/tre corde in italic words,
+  accent, marcato, staccato, tenuto, fermata, tr, mordent, turn, arpeggio, 8va/8vb, breath, caesura, Ped., release,
+  segno, coda, circle, check, glasses); the stamp row scrolls sideways inside the toolbar (`.markbar` no longer
+  wraps: in a wrapping column flex each line grew to its content). **Sample with sheet music**:
+  `samples/warm-ups.musicxml` (`tools/make_sample_xml.py` joins make_sample.py's four pages with `<print new-page>`,
+  parts named Piano right/left hand); on first launch `addSample` puts the sample in the library and adds its sheet
+  music (`pt-sample-added`; skipped under `navigator.webdriver` unless `pt-test-sample` is set; native-sim checks it);
+  followed from `warmups_play.wav`, each page turns about 1.3 s ahead. Reviewer notes updated.
 - **Test 17:** the two features the owner picked from Claude's short list, and **App Store packaging** (owner has
   Xcode). **Pinch to zoom** (`zoom` { z, x, y, res } in app.js): two pointers on the stand zoom around their midpoint
   (`zoomTo`, CSS transform on `.sheet`, 1–4x), one pointer pans while zoomed (taps still turn pages; a drag isn't a

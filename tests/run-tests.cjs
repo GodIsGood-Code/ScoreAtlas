@@ -97,9 +97,10 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   await page.keyboard.press('ArrowRight'); await waitNum('4 / 4');
   await page.keyboard.press('ArrowRight'); await page.waitForTimeout(100);
   check('past the end shows "Last page"', (await page.isVisible('#toast')) && (await page.textContent('#toast')) === 'Last page');
-  await page.click('#helpBtn'); // show the card again
-
-  // Microphone check with the fake microphone playing C major
+  // Microphone check (Help → Check the microphone and the pedal) with the fake microphone playing C major
+  await page.click('#viewBtn');
+  await page.click('#openHelp');
+  await page.click('#micCheck summary');
   await page.click('#micBtn');
   await page.waitForFunction(() => window.pageTurner && window.pageTurner.audioTime > 0.5, null, { timeout: 5000 }).catch(() => {});
   check('Check microphone starts listening', (await page.getAttribute('#micBtn', 'aria-pressed')) === 'true' && (await page.evaluate(() => window.pageTurner.audioTime)) > 0.5, await page.textContent('#earNote').catch(() => ''));
@@ -119,6 +120,8 @@ const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  $
   await waitNum('1 / 4');
   await page.keyboard.press('ArrowRight');
   await waitNum('2 / 4');
+  await page.keyboard.press('Escape'); // close Help
+  if (await page.isHidden('#card')) await page.click('#helpBtn');
   await page.click('#teachBtn');
   check('teaching starts from the page on screen', /Teaching from page 2/.test(await page.textContent('#modeText')), await page.textContent('#modeText'));
   await page.waitForFunction(() => window.pageTurner.audioTime > 0, null, { timeout: 5000 }).catch(() => {});

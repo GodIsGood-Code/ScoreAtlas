@@ -98,9 +98,10 @@ const ORIGIN = 'http://localhost:8765';
 
   // ---------- Practice journal ----------
   await page.click('#practiceBtn');
-  await page.click('#journalBtn');
+  await page.click('#historyBtn');
+  await page.click('#historyTabs [data-tab=journal]');
   await page.waitForFunction(() => /Nothing yet/.test(document.querySelector('#journalBody').textContent), null, { timeout: 5000 }).catch(() => {});
-  check('the practice journal opens', await page.isVisible('#journalPanel') && /Nothing yet/.test(await page.textContent('#journalBody')));
+  check('the practice journal opens (History → Journal)', await page.isVisible('#journalBody') && /Nothing yet/.test(await page.textContent('#journalBody')));
   await page.keyboard.press('Escape');
 
   // ---------- A PDF with markings ----------

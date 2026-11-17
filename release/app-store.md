@@ -88,9 +88,10 @@ ScoreAtlas listens to your playing so it can follow along in the music and turn 
 ## Notes for Apple's reviewer (App Review Information)
 
 ScoreAtlas follows a pianist's playing through the microphone and turns the pages of the sheet music.
-To try it without a piano: open the sample piece (it opens on first launch), tap Piece, then Teach, play or hum along
-for a few seconds while tapping the right side of the page to turn, then tap Done. Tap Follow and play or hum the
-same thing again: the page turns by itself. Everything runs on the device; no account or sign-in is needed.
+The sample piece "Warm-ups" opens on first launch with its sheet music already added: tap Follow and play its scales
+on a piano (or play a recording of them near the iPad): the bar being played is highlighted and the pages turn by
+themselves. Without a piano: tap Piece, then Teach, play or hum along for a few seconds while tapping the right side
+of the page to turn, then tap Done. Tap Follow and play or hum the same thing again: the page turns by itself. Everything runs on the device; no account or sign-in is needed.
 
 ## Screenshots to take (iPad 13-inch, 2064 × 2752 portrait or 2752 × 2064 landscape)
 

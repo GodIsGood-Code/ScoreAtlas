@@ -15,10 +15,15 @@ export const washOf = (hex, a = 0.36) => {
 
 // Stamps: what each one is called (for buttons and reading aloud)
 export const STAMPS = [
-  ["pp", "pianissimo"], ["p", "piano"], ["mp", "mezzo piano"], ["mf", "mezzo forte"], ["f", "forte"], ["ff", "fortissimo"],
-  ["sfz", "sforzando"], ["cresc", "crescendo"], ["dim", "diminuendo"], ["accent", "accent"], ["staccato", "staccato"],
-  ["tenuto", "tenuto"], ["fermata", "fermata"], ["breath", "breath mark"], ["caesura", "caesura"], ["ped", "pedal down"],
-  ["release", "pedal up"], ["circle", "circle"], ["check", "check mark"], ["eyes", "watch (glasses)"],
+  ["ppp", "pianississimo"], ["pp", "pianissimo"], ["p", "piano"], ["mp", "mezzo piano"], ["mf", "mezzo forte"], ["f", "forte"],
+  ["ff", "fortissimo"], ["fff", "fortississimo"], ["fp", "fortepiano"], ["sf", "sforzando (sf)"], ["sfz", "sforzando"],
+  ["rf", "rinforzando"], ["cresc", "crescendo hairpin"], ["dim", "diminuendo hairpin"], ["cresc.", "cresc. (words)"],
+  ["dim.", "dim. (words)"], ["rit.", "ritardando"], ["accel.", "accelerando"], ["a tempo", "a tempo"],
+  ["accent", "accent"], ["marcato", "marcato"], ["staccato", "staccato"], ["tenuto", "tenuto"], ["fermata", "fermata"],
+  ["tr", "trill"], ["mordent", "mordent"], ["turn", "turn"], ["arpeggio", "arpeggio"], ["8va", "octave higher (8va)"],
+  ["8vb", "octave lower (8vb)"], ["breath", "breath mark"], ["caesura", "caesura"], ["ped", "pedal down"],
+  ["release", "pedal up"], ["una corda", "una corda"], ["tre corde", "tre corde"], ["segno", "segno"], ["coda", "coda"],
+  ["circle", "circle"], ["check", "check mark"], ["eyes", "watch (glasses)"],
 ];
 
 // Draws a stamp centered at (x, y); u: its size in pixels (about a staff space and a half)
@@ -34,8 +39,41 @@ export function drawStamp(ctx, k, x, y, u, color) {
     ctx.textBaseline = "middle";
     ctx.fillText(text, x, y);
   };
+  // performance directions in words (rit., a tempo, una corda...): italic, not bold
+  const words = (text) => {
+    ctx.font = `italic 400 ${Math.round(u * 1.05)}px "Times New Roman", Georgia, serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  };
   switch (k) {
-    case "pp": case "p": case "mp": case "mf": case "f": case "ff": case "sfz": dyn(k); break;
+    case "ppp": case "pp": case "p": case "mp": case "mf": case "f": case "ff": case "fff": case "fp": case "sf": case "sfz": case "rf": dyn(k); break;
+    case "cresc.": case "dim.": case "rit.": case "accel.": case "a tempo": case "una corda": case "tre corde": words(k); break;
+    case "tr": ctx.font = `italic 700 ${Math.round(u * 1.2)}px "Times New Roman", Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("tr", x, y); break;
+    case "8va": case "8vb":
+      ctx.font = `italic 700 ${Math.round(u * 0.95)}px "Times New Roman", Georgia, serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(k, x - u * 1.4, y);
+      ctx.setLineDash([u * 0.25, u * 0.2]); line([[0.6, k === "8va" ? -0.35 : 0.35], [1.8, k === "8va" ? -0.35 : 0.35], [1.8, k === "8va" ? 0.1 : -0.1]]); ctx.setLineDash([]); break;
+    case "marcato": line([[-0.4, 0.35], [0, -0.4], [0.4, 0.35]]); break;
+    case "mordent": ctx.lineWidth = Math.max(1, u * 0.11); line([[-0.8, 0.15], [-0.45, -0.3], [-0.2, 0.15], [0.15, -0.3], [0.45, 0.15], [0.8, -0.3]]); line([[-0.05, -0.55], [0.05, 0.4]]); break;
+    case "turn":
+      ctx.lineWidth = Math.max(1, u * 0.12);
+      ctx.beginPath(); ctx.ellipse(x - u * 0.38, y, u * 0.38, u * 0.3, 0, 0.2 * Math.PI, 1.9 * Math.PI, true); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(x + u * 0.38, y, u * 0.38, u * 0.3, 0, 1.2 * Math.PI, 0.9 * Math.PI, true); ctx.stroke(); break;
+    case "arpeggio": {
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) { const t = i / 24, yy = y - u * 1.2 + t * u * 2.4, xx = x + Math.sin(t * Math.PI * 6) * u * 0.18; i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
+      ctx.stroke(); break;
+    }
+    case "segno":
+      ctx.lineWidth = Math.max(1, u * 0.12);
+      ctx.beginPath(); ctx.moveTo(x + u * 0.35, y - u * 0.45); ctx.bezierCurveTo(x - u * 0.6, y - u * 0.75, x - u * 0.6, y - u * 0.05, x, y); ctx.bezierCurveTo(x + u * 0.6, y + u * 0.05, x + u * 0.6, y + u * 0.75, x - u * 0.35, y + u * 0.45); ctx.stroke();
+      line([[-0.55, 0.6], [0.55, -0.6]]);
+      ctx.beginPath(); ctx.arc(x - u * 0.45, y - u * 0.05, u * 0.09, 0, 2 * Math.PI); ctx.arc(x + u * 0.45, y + u * 0.05, u * 0.09, 0, 2 * Math.PI); ctx.fill(); break;
+    case "coda":
+      ctx.lineWidth = Math.max(1, u * 0.12);
+      ctx.beginPath(); ctx.ellipse(x, y, u * 0.42, u * 0.55, 0, 0, 2 * Math.PI); ctx.stroke();
+      line([[-0.75, 0], [0.75, 0]]); line([[0, -0.8], [0, 0.8]]); break;
     case "cresc": line([[1.6, -0.45], [-1.6, 0], [1.6, 0.45]]); break;
     case "dim": line([[-1.6, -0.45], [1.6, 0], [-1.6, 0.45]]); break;
     case "accent": line([[-0.55, -0.3], [0.55, 0], [-0.55, 0.3]]); break;
