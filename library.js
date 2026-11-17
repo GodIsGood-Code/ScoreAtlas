@@ -9,9 +9,9 @@ const ago = (t) => {
 };
 
 export class LibraryUI {
-  // panel: the <aside>; onOpen(key); onAdd(): pick a new PDF; onPlay(setlist, index)
-  constructor(panel, { onOpen, onAdd, onPlay }) {
-    Object.assign(this, { panel, onOpen, onAdd, onPlay });
+  // panel: the <aside>; onOpen(key); onAdd(): pick new files; onPlay(setlist, index); onShare(setlist): send it with its music
+  constructor(panel, { onOpen, onAdd, onPlay, onShare }) {
+    Object.assign(this, { panel, onOpen, onAdd, onPlay, onShare });
     this.tab = "pieces";
     this.editing = null; // the setlist being edited
     this.pieces = [];
@@ -28,13 +28,16 @@ export class LibraryUI {
 
   async open(tab) {
     if (tab) { this.tab = tab; this.editing = null; }
+    const token = (this.opening = (this.opening || 0) + 1);
     await this.refresh();
+    if (token !== this.opening) return; // closed (or opened again) meanwhile
     this.panel.hidden = false;
     const scrim = document.getElementById("scrim");
     if (scrim) { scrim.hidden = false; scrim.onclick = () => this.close(); }
   }
 
   close() {
+    this.opening = (this.opening || 0) + 1;
     this.panel.hidden = true;
     const scrim = document.getElementById("scrim");
     if (scrim) scrim.hidden = true;
@@ -132,7 +135,9 @@ export class LibraryUI {
       const actions = this.el("div", "lib-actions");
       const play = this.button("Play", "primary", () => { if (s.items.length) { this.close(); this.onPlay(s, 0); } });
       play.disabled = !s.items.length;
-      actions.append(play, this.button("Edit", "", () => { this.editing = s; this.render(); }));
+      const share = this.button("Share", "", () => this.onShare && this.onShare(s), "Send this setlist with its music (to a choir, a band, another iPad)");
+      share.disabled = !s.items.length;
+      actions.append(play, this.button("Edit", "", () => { this.editing = s; this.render(); }), share);
       li.append(text, actions);
       list.append(li);
     }

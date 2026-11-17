@@ -107,7 +107,8 @@ const PERF = path.join(__dirname, 'output/perf');
   check('the report shows the notes summary', /notes? checked/.test(ncText), (ncText.match(/[0-9]+ notes? checked[^.]*/) || [''])[0]);
   await page.screenshot({ path: path.join(__dirname, 'output/notecheck.png') });
   await page.click('#reportClose');
-  // Loop: tap Loop, then the first and the third bar on the page
+  // Loop: Practice → Loop a passage, then the first and the third bar on the page
+  await page.click('#practiceBtn');
   await page.click('#loopBtn');
   const cbox = await page.$eval('#sheet canvas', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
   const boxes = await page.evaluate(() => window.pageTurner.layoutOnPage());
@@ -116,7 +117,8 @@ const PERF = path.join(__dirname, 'output/perf');
     await tap(boxes[0]); await page.waitForTimeout(100); await tap(boxes[2]); await page.waitForTimeout(200);
   }
   check('a loop over three bars is outlined', (await page.$$('.loop-mark')).length === 3, `${(await page.$$('.loop-mark')).length} outlined`);
-  check('the Loop button now turns it off', (await page.textContent('#loopBtn')) === 'Loop off');
+  await page.click('#practiceBtn');
+  check('the Loop item now turns it off', /Turn the loop off/.test(await page.textContent('#loopBtn')));
   await page.click('#loopBtn');
   if (await page.isHidden('#card')) await page.click('#helpBtn');
   // Sheet music options: type the first bar of page 2 and apply; the choice is kept after a reload

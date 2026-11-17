@@ -31,8 +31,10 @@ export async function shareFile(bytes, name, type) {
 const TYPED = { Uint8Array, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array };
 const SETTINGS_KEYS = ["pt-settings", "pt-view", "pt-welcomed"];
 
-// Everything as a zip: scoreatlas.json (the structure) and bin/<n> (the binary parts: PDFs, the learned sound)
-export async function makeBackup() {
+// Everything as a zip: scoreatlas.json (the structure) and bin/<n> (the binary parts: PDFs, the learned sound).
+// only: { keys, setlist } for sharing a setlist: just those pieces (their PDFs, sheet music and markings, not practice
+// history) and that one setlist, without settings. The same file opens with Library → Add or Settings → Restore.
+export async function makeBackup(only = null) {
   const bins = [];
   const encode = (v) => {
     if (v instanceof ArrayBuffer) v = new Uint8Array(v);
@@ -46,8 +48,17 @@ export async function makeBackup() {
     return v;
   };
   const data = { app: "ScoreAtlas", version: 1, made: new Date().toISOString(), stores: {}, settings: {} };
-  for (const name of ["lessons", "files"]) data.stores[name] = (await entries(name)).map(([k, v]) => [k, encode(v)]);
-  for (const k of SETTINGS_KEYS) { try { const v = localStorage.getItem(k); if (v !== null) data.settings[k] = v; } catch {} }
+  const keys = only ? new Set(only.keys) : null;
+  const wanted = (store, k) => {
+    if (!keys) return true;
+    k = String(k);
+    if (store === "files") return k.startsWith("piece|") || k.startsWith("meta|") ? keys.has(k.slice(k.indexOf("|") + 1)) : false;
+    return keys.has(k) || (k.endsWith("|marks") && keys.has(k.slice(0, -6)));
+  };
+  for (const name of ["lessons", "files"]) data.stores[name] = (await entries(name)).filter(([k]) => wanted(name, k)).map(([k, v]) => [k, encode(v)]);
+  if (only && only.setlist) data.stores.files.push(["setlists", [only.setlist]]);
+  if (only) data.shared = only.setlist ? only.setlist.name : true;
+  else for (const k of SETTINGS_KEYS) { try { const v = localStorage.getItem(k); if (v !== null) data.settings[k] = v; } catch {} }
   const files = { "scoreatlas.json": strToU8(JSON.stringify(data)) };
   bins.forEach((b, i) => { files[`bin/${i}`] = [b, { level: 0 }]; }); // PDFs and sound features hardly compress
   const pieces = data.stores.files.filter(([k]) => String(k).startsWith("meta|")).length;
@@ -86,7 +97,7 @@ export async function restoreBackup(bytes) {
     await putEntries(name, list);
   }
   for (const [k, v] of Object.entries(data.settings || {})) { try { localStorage.setItem(k, v); } catch {} }
-  return { pieces: (data.stores.files || []).filter(([k]) => String(k).startsWith("meta|")).length, made: data.made };
+  return { pieces: (data.stores.files || []).filter(([k]) => String(k).startsWith("meta|")).length, made: data.made, shared: data.shared || null };
 }
 
 // ---------- A recording as a WAV file ----------

@@ -103,14 +103,33 @@ const ORIGIN = 'http://localhost:8765';
   await page.click('#markUndo');
   check('Undo takes the last mark away', (await strokes()) === 1);
   // a thick pen
-  await page.click('[data-size="1.8"]');
-  await page.click('[data-tool="pen"][data-color="red"]');
+  await page.$eval('#sizeSlider', (e) => { e.value = '1.8'; e.dispatchEvent(new Event('input')); });
+  await page.click('[data-tool="pen"]');
+  await page.click('#inkRow [data-color="#c62828"]');
   await page.mouse.move(unit.x + unit.w * 0.3, unit.y + unit.h * 0.4); await page.mouse.down();
   await page.mouse.move(unit.x + unit.w * 0.5, unit.y + unit.h * 0.45, { steps: 5 }); await page.mouse.up();
   const thick = await pt(() => { const all = Object.values(window.pageTurner.marks().pages).flat(); return all[all.length - 1]; });
-  check('the pen size can be changed (thick)', thick && thick.t === 'pen' && Math.abs(thick.w - 0.0022 * 1.8) < 1e-6, thick && `w ${thick.w}`);
+  check('the pen size can be changed (slider) and its color (red)', thick && thick.t === 'pen' && Math.abs(thick.w - 0.0022 * 1.8) < 1e-6 && thick.c === '#c62828', thick && `w ${thick.w} ${thick.c}`);
   await page.click('#markUndo');
-  await page.click('[data-size="1"]');
+  // any color from the color wheel
+  await page.$eval('#inkPicker', (e) => { e.value = '#2e7d32'; e.dispatchEvent(new Event('input')); });
+  await page.mouse.move(unit.x + unit.w * 0.3, unit.y + unit.h * 0.4); await page.mouse.down();
+  await page.mouse.move(unit.x + unit.w * 0.5, unit.y + unit.h * 0.45, { steps: 5 }); await page.mouse.up();
+  const green = await pt(() => { const all = Object.values(window.pageTurner.marks().pages).flat(); return all[all.length - 1]; });
+  check('a color from the color wheel', green && green.c === '#2e7d32', green && green.c);
+  await page.click('#markUndo');
+  // a stamp and a text note
+  await page.click('[data-tool="stamp"]');
+  await page.click('#stampRow [data-stamp="mf"]');
+  await page.mouse.click(unit.x + unit.w * 0.4, unit.y + unit.h * 0.3);
+  check('a stamp (mf) can be placed', await pt(() => Object.values(window.pageTurner.marks().pages).flat().some((s) => s.t === 'stamp' && s.k === 'mf')));
+  await page.click('[data-tool="text"]');
+  await page.mouse.click(unit.x + unit.w * 0.2, unit.y + unit.h * 0.7);
+  await page.fill('#noteText', 'Slow here');
+  await page.press('#noteText', 'Enter');
+  check('a text note can be written', await pt(() => Object.values(window.pageTurner.marks().pages).flat().some((s) => s.t === 'note' && s.s === 'Slow here')));
+  await page.click('#markUndo'); await page.click('#markUndo');
+  await page.$eval('#sizeSlider', (e) => { e.value = '1'; e.dispatchEvent(new Event('input')); });
   await page.click('[data-tool="finger"]');
   await page.click('#digitRow >> text=3');
   await page.mouse.click(unit.x + unit.w * 0.5, unit.y + unit.h * 0.2);

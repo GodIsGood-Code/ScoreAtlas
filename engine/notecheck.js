@@ -28,6 +28,8 @@ export const NOTECHECK_SETTINGS = {
   timeScale: 0.3,
   softWindow: 0.08, // a softly played note (heard less strictly) must be this close to its time
   skipHeard: 0.05, // the cost of a heard chord that isn't written (overtones, echoes: common, so cheap)
+  runUnsure: 0.4, // a stretch of playing with more than this share of its notes not found is left out: the bar times
+  runMin: 8, // are off there (the follower was on another copy of the music), not the playing (owner's Test 15 run)
 };
 
 // Line up the written chords with the chords heard, in order (dynamic programming, like the follower's own
@@ -140,13 +142,14 @@ export function expectedNotes(bars, measures) {
 // strictly (optional, same form).
 // Returns { notes: expected with status "ok" | "missed" | "wrong" (and `instead` for wrong), byMeasure: Map(measure ->
 // { total, missed, wrong }), checked, missed, wrong }.
-export function checkNotes(expected, heard, cfg = NOTECHECK_SETTINGS, soft = null) {
+// ignore: a Set of "measure|midi" the pianist said aren't in their edition (misread by the sheet music reader).
+export function checkNotes(expected, heard, cfg = NOTECHECK_SETTINGS, soft = null, ignore = null) {
   const H = [...heard].sort((a, b) => a.t - b.t);
   const used = new Uint8Array(H.length);
   const winOf = (e) => Math.max(cfg.window, cfg.windowShare * (e.barLength || 0));
   // the first heard index at or after time t
   const from = (t) => { let lo = 0, hi = H.length; while (lo < hi) { const m = (lo + hi) >> 1; if (H[m].t < t) lo = m + 1; else hi = m; } return lo; };
-  const notes = expected.filter((e) => e.midi >= cfg.lowest).map((e) => ({ ...e, status: "missed" }));
+  const notes = expected.filter((e) => e.midi >= cfg.lowest && !(ignore && ignore.has(`${e.measure}|${e.midi}`))).map((e) => ({ ...e, status: "missed" }));
   // 0) each note's time, following the playing (see alignTimes); the steps below use it
   alignTimes(notes, H, cfg);
   // 1) written notes heard: the nearest unused heard note of the same pitch in the window (closest pairs first)
@@ -244,6 +247,21 @@ export function checkNotes(expected, heard, cfg = NOTECHECK_SETTINGS, soft = nul
   const perBar = new Map();
   for (const e of notes) { const r = perBar.get(e.played) || { n: 0, bad: 0 }; r.n++; if (e.status !== "ok") r.bad++; perBar.set(e.played, r); }
   for (const e of notes) { const r = perBar.get(e.played); if (r.n >= 3 && r.bad / r.n > cfg.unsureShare && e.status !== "ok") e.status = "unsure"; }
+  // 3b) whole stretches of playing (bars in order, without a break) where too much seems missing: the timing is off
+  const byTime = [...notes].sort((a, b) => a.t - b.t);
+  let run = [], lastP = -9, lastT = -9;
+  const closeRun = () => {
+    const bad = run.filter((e) => e.status !== "ok").length;
+    if (run.length >= cfg.runMin && bad / run.length > cfg.runUnsure) for (const e of run) if (e.status !== "ok") e.status = "unsure";
+    run = [];
+  };
+  for (const e of byTime) {
+    if (run.length && (e.played < lastP || e.played > lastP + 2 || e.t - lastT > 2.5)) closeRun();
+    run.push(e);
+    lastP = e.played;
+    lastT = e.t;
+  }
+  closeRun();
   const byMeasure = new Map();
   let missed = 0, wrong = 0;
   for (const e of notes) {

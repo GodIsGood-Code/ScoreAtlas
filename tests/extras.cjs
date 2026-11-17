@@ -67,15 +67,21 @@ const ORIGIN = 'http://localhost:8765';
   await page.uncheck('#cropToggle');
 
   // ---------- Metronome ----------
+  await page.click('#practiceBtn');
   await page.click('#openMetro');
-  check('the metronome opens', await page.isVisible('#metroBar'));
-  await pt(() => { window.__beats = 0; new MutationObserver(() => { if (document.querySelector('#beatDot').classList.contains('on')) window.__beats++; }).observe(document.querySelector('#beatDot'), { attributes: true }); });
-  await page.click('#metroFaster'); await page.click('#metroFaster');
-  check('tempo goes up by two each tap', (await page.textContent('#metroTempo')) === '♩ 84');
+  check('the metronome opens (Practice menu)', await page.isVisible('#metroBar'));
+  await page.fill('#metroTempo', '84'); await page.press('#metroTempo', 'Enter');
+  await page.click('#metroFaster'); await page.click('#metroSlower');
+  check('the tempo can be typed', (await page.inputValue('#metroTempo')) === '84' && (await page.inputValue('#metroSlider')) === '84');
+  await page.selectOption('#metroBeats', '3'); await page.selectOption('#metroUnitSel', '4');
+  check('any time signature: 3/4 shows three beats', (await page.$$('#beatRow i')).length === 3);
+  await pt(() => { window.__beats = 0; new MutationObserver(() => { if (document.querySelector('#beatRow i.on')) window.__beats++; }).observe(document.querySelector('#beatRow'), { attributes: true, subtree: true }); });
   await page.click('#metroStart');
   await page.waitForTimeout(2000);
   const beats = await pt(() => window.__beats);
   check('the beat flashes at the tempo (about 2.8 beats in 2 s)', beats >= 2 && beats <= 4, `${beats} beats`);
+  await page.click('#metroStart');
+  await page.selectOption('#metroBeats', '4');
   await page.click('#metroClose');
 
   // ---------- Go to a bar (needs sheet music) ----------
@@ -91,7 +97,7 @@ const ORIGIN = 'http://localhost:8765';
   check('go to bar 12 shows page 2', await waitNum('2 / 2'));
 
   // ---------- Practice journal ----------
-  await page.click('#helpBtn');
+  await page.click('#practiceBtn');
   await page.click('#journalBtn');
   await page.waitForFunction(() => /Nothing yet/.test(document.querySelector('#journalBody').textContent), null, { timeout: 5000 }).catch(() => {});
   check('the practice journal opens', await page.isVisible('#journalPanel') && /Nothing yet/.test(await page.textContent('#journalBody')));

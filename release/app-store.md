@@ -41,13 +41,19 @@ TWO WAYS TO LEARN A PIECE
 PRACTICE TOOLS
 • Practice report: after a session, see which bars you practiced most, where you hesitated, and your tempo bar by bar.
 • Loop a passage: tap the first and last bar, and ScoreAtlas counts each repetition and shows its tempo.
+• Trouble spots: the bars you stumble on, looped one at a time with the metronome, a little faster each clean time.
+• Hands separately: practice the left or right hand alone, and ScoreAtlas follows just that hand.
+• Hear the music: the sheet music played from any page, at any speed, with the bar highlighted.
 • Listen back: hear your session again with the highlight and pages following along.
-• Check my notes: ScoreAtlas listens to your session for missed and wrong notes and marks those bars on the music.
+• Check my notes: ScoreAtlas listens to your session for missed and wrong notes and marks those bars on the music. The practice journal shows your progress over the days.
+• A metronome with any time signature, subdivisions, tap tempo and a tempo ladder.
 
 EVERYTHING A MUSIC STAND NEEDS
 • Library: every PDF you open is kept, with a picture of its first page. Scans and phone photos of music work.
 • Setlists: line up pieces for a service, lesson or concert; at the end of a piece, the next one opens.
-• Apple Pencil: write fingerings, circle dynamics, highlight passages. Markings stay with the piece.
+• Apple Pencil: pens in any color and size, highlighters, text notes, fingerings and stamps for dynamics, accents, fermatas, breath and pedal marks. Markings stay with the piece.
+• Edit pages: take out blank pages, reorder, turn sideways scans, or add pages from another PDF.
+• Share a setlist with its music, or a marked-up PDF with your teacher.
 • Two pages side by side when your iPad is sideways, and half-page turns: the next page's top half appears while you finish this one.
 • Lock for performing: only the pedal turns pages, so a stray touch can't.
 • Works offline at the venue, with no account and no Wi-Fi needed.
@@ -94,5 +100,6 @@ same thing again: the page turns by itself. Everything runs on the device; no ac
 4. Pencil markings with the Mark toolbar ("Write fingerings with Apple Pencil").
 5. The library with a setlist ("Your library and setlists").
 6. The loop with its repetition count ("Loop a passage, count every repetition").
+7. The Practice menu or Trouble spots ("Practice what needs it").
 
 Use music you have the right to show (your own arrangements, public-domain editions such as IMSLP scans, or the sample).

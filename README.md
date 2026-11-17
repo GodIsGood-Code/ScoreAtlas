@@ -4,7 +4,7 @@ Sheet music on the iPad that turns its own pages by listening to you play.
 
 **Try it:** https://godisgood-code.github.io/ScoreAtlas/ (open it in Safari on an iPad)
 
-## What works now (Test 15)
+## What works now (Test 16)
 
 - Open a PDF (scans work) and read it one page at a time. The app reopens your last PDF next time.
 - Turn pages with a Bluetooth page-turn pedal, by tapping (right side forward, left side back), or by swiping.
@@ -22,8 +22,14 @@ Sheet music on the iPad that turns its own pages by listening to you play.
   and marks those bars on the music. A **practice journal** shows your practice across days, and a **metronome** with
   a tempo ladder speeds a loop up as you get it clean.
 - **Library and setlists:** every PDF you open is kept; play a setlist and the pedal goes from piece to piece.
-- **Apple Pencil:** write fingerings and markings on the music (pens in three sizes, highlighter, fingering numbers,
-  eraser, undo).
+- **Practice menu:** loop a passage, work through your **trouble spots** (the bars you stumble on, looped with the
+  metronome, faster each clean time), practice **hands separately**, **hear the music** from any page at any speed, and
+  a **metronome** with any time signature, subdivisions and tap tempo.
+- **Apple Pencil:** pens in any color and size, highlighters, text notes, stamps (dynamics, accents, fermata, breath
+  and pedal marks), fingering numbers, eraser, undo.
+- **Edit pages:** take out blank pages, reorder, turn sideways scans, add pages from another PDF.
+- **Add music:** a PDF and its sheet music together, several pieces at once; share a setlist with its music. On a Mac,
+  [ScoreAtlas Reader](mac/README.md) turns PDFs into sheet music with Audiveris and puts both in iCloud Drive.
 - **Display:** two pages side by side when the iPad is sideways, half-page turns, a lock for performing, trimmed
   margins and dark pages. Tap the page number to go to a page, a bar or a bookmark.
 - **Backup and sharing:** everything in one backup file; send your teacher the PDF with your markings or a recording.
@@ -45,6 +51,7 @@ See `CLAUDE.md` for the tests.
 PDF rendering uses [PDF.js](https://mozilla.github.io/pdf.js/) (Apache-2.0), included in `vendor/pdfjs/`. Notes are
 heard with Spotify's [Basic Pitch](https://github.com/spotify/basic-pitch-ts) (Apache-2.0) and
 [TensorFlow.js](https://github.com/tensorflow/tfjs) (Apache-2.0), in `vendor/basic-pitch/` and `vendor/tfjs/`.
-MusicXML files are unzipped with [fflate](https://github.com/101arrowz/fflate) (MIT).
+MusicXML files are unzipped with [fflate](https://github.com/101arrowz/fflate) (MIT). Pages are edited with
+[pdf-lib](https://github.com/Hopding/pdf-lib) (MIT), in `vendor/pdf-lib/`.
 
 Privacy policy: `privacy.html`. Support: `support.html`. App Store listing and release checklist: `release/`.

@@ -25,5 +25,17 @@ Everything written so far for the release, and what's left. The app will launch 
 4. **Screenshots** (see `app-store.md`), taken on the iPad or the Xcode simulator.
 5. **Fill in App Store Connect**: create the app, paste the texts, upload screenshots, answer the privacy and age
    questions, upload the build from Xcode, and submit for review (usually a day or two).
-6. Optional before 1.0: backups of the library and markings to Files or iCloud (so nothing is lost when changing
-   iPads).
+6. **Licenses** to list in the app's About or Settings (all allow commercial use): PDF.js and pdf-lib (Apache-2.0 /
+   MIT), TensorFlow.js and Basic Pitch (Apache-2.0), fflate (MIT). Their license files are in `vendor/`.
+7. **The Mac helper** (`mac/`, served at `/mac/ScoreAtlas-Reader.zip`) stays on the website; Apple's review doesn't
+   involve it. It is unsigned, so the support page explains the right-click → Open step. Signing it would need the
+   developer account's "Developer ID" (optional).
+8. **A last test pass** on the owner's iPad with the final build: Follow, Check my notes (speed of the note model on
+   the iPad's graphics chip), Hear the music, Edit pages, Add music from iCloud Drive, a shared setlist opened on a
+   second device if available.
+
+## Done since the groundwork
+
+- Backup and restore (Settings → Backup), and sharing a setlist with its music (Test 14, Test 16).
+- Wrong-note detection (Test 15), trouble spots, hands separately, hear the music, page tools, stamps and text notes
+  (Test 16).

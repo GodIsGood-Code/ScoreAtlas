@@ -99,7 +99,7 @@ export function readScore(input) {
                 open.get(key).length += length; // a tied note keeps sounding: no new attack
                 if (!ties.includes("start")) open.delete(key);
               } else {
-                const note = { midi: Math.round(midi), start: start / divisions, length, measure: mi, part: pi };
+                const note = { midi: Math.round(midi), start: start / divisions, length, measure: mi, part: pi, staff: parseInt(textOf(el, "staff"), 10) || 1 };
                 m.notes.push(note);
                 if (ties.includes("start")) open.set(key, note);
               }
@@ -269,6 +269,23 @@ export function keepParts(score, parts) {
   if (!parts || !parts.length) return score;
   const keep = new Set(parts);
   return { ...score, measures: score.measures.map((m) => ({ ...m, notes: m.notes.filter((n) => keep.has(n.part)) })) };
+}
+
+// One hand only: "right" or "left" (anything else keeps both). A part written on two staves: the upper staff is the
+// right hand, the lower ones the left. Single-staff parts (a reader may split a piano in two): the lower-sounding
+// half of them is the left hand.
+export function keepHand(score, hand) {
+  if (hand !== "left" && hand !== "right") return score;
+  const parts = new Map(); // part -> { staves: Set, sum, n }
+  for (const m of score.measures) for (const n of m.notes) {
+    const p = parts.get(n.part) || { staves: new Set(), sum: 0, n: 0 };
+    p.staves.add(n.staff || 1); p.sum += n.midi; p.n++;
+    parts.set(n.part, p);
+  }
+  const single = [...parts].filter(([, p]) => p.staves.size < 2).map(([k, p]) => [k, p.sum / p.n]).sort((a, b) => b[1] - a[1]);
+  const upper = new Set(single.slice(0, Math.ceil(single.length / 2)).map(([k]) => k));
+  const isRight = (n) => (parts.get(n.part).staves.size >= 2 ? (n.staff || 1) === 1 : upper.has(n.part));
+  return { ...score, measures: score.measures.map((m) => ({ ...m, notes: m.notes.filter((n) => isRight(n) === (hand === "right")) })) };
 }
 
 // Which parts the pianist probably plays, and which are tiny bits a reader like Audiveris split off by mistake.

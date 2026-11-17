@@ -224,13 +224,16 @@ export class Follower {
       anchor: s(settings.anchorTime || 30),
     };
     this.flip = null;
+    // the page on screen when following starts is where the pianist means to begin: it holds like a page they turned
+    // to (the clock only runs while they play)
+    if (page) this.anchor = { page, until: this.frames.anchor };
   }
 
   // The page the pianist turned to (in the last half minute, or played on from there): places on it or next to it are
   // fine; anywhere else must fit clearly better than the best place there (similar passages elsewhere are common)
   anchorOk(frame) {
     const a = this.anchor;
-    return !a || this.clock >= a.until || Math.abs(this.pageAt[frame] - a.page) <= 1;
+    return !a || (this.clock || 0) >= a.until || Math.abs(this.pageAt[frame] - a.page) <= 1;
   }
   anchorBest(row) {
     const a = this.anchor, se = this.searcher;
@@ -431,7 +434,11 @@ export class Follower {
     if (page === this.page) return;
     this.page = page;
     // playing on over a page turn keeps the pianist's page choice in force, on the new page
-    if (why === "turn" && this.anchor && this.clock < this.anchor.until) this.anchor = { page, until: this.clock + this.frames.anchor };
+    const now = this.clock || 0;
+    if (why === "turn" && this.anchor && now < this.anchor.until) this.anchor = { page, until: now + this.frames.anchor, seen: true };
+    // found elsewhere after playing on the anchor's page: the pianist has moved on (the anchor only guards the page
+    // they meant to start from, or turned to, until the music has been heard there)
+    if (why === "jump" && this.anchor && this.anchor.seen && Math.abs(page - this.anchor.page) > 1) this.anchor = null;
     if (this.onTurn) this.onTurn(page, why);
   }
 
@@ -594,8 +601,19 @@ export class Follower {
       return;
     }
     if (!pick) { this.vote = null; return; }
+    // Back to the pianist's page: we're following a copy of this music elsewhere while the same music on the page
+    // they turned to (or started from) fits about as well
+    const a = this.anchor;
+    if (a && (this.clock || 0) < a.until && Math.abs(this.pageAt[this.position] - a.page) > 1) {
+      const best = this.anchorBest(row);
+      if (best && best.cost <= this.limits(best.frame).goodRatio * background && best.cost <= cfg.pageAmbiguity * Math.min(here, candidates[0].cost)) {
+        this.moveTo(best.frame);
+        return;
+      }
+    }
     // Common sense: while what we hear still fits where we are, the pianist is there, however well some copy of
     // the music elsewhere fits (refrains); only a page flip by the pianist overrides that
+    if (this.trackingWell() && this.anchor && Math.abs(this.pageAt[this.position] - this.anchor.page) <= 1) this.anchor.seen = true;
     if (this.trackingWell() && !(this.flip && this.pageAt[this.position] !== this.flip.page)) {
       this.vote = null;
       this.holdTurns = false;

@@ -7,6 +7,54 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
+- **Test 16:** the owner's Test 15 feedback (liked everything; following tracked well on run-throughs and better in
+  practice, but still went to the wrong place at times while they played something on the page; asked for a pen-size
+  slider, a color wheel, typed metronome tempo and more beat types; couldn't verify Check my notes, so Claude was to
+  verify it from their recording) plus features 1–6 and 8 of the suggestions, the easier sheet-music import, a Mac
+  helper, and a UI remap ("the absolute best possible"). **UI:** top bar Library · page · Mark · **Practice** (menu:
+  Hands Both/Left/Right, Loop a passage, Trouble spots, Hear the music, Metronome; Last session's report, Listen back,
+  Practice journal) · View (display, lock, Settings/Help) · Follow · Piece (page turning, **Pages → Edit pages**,
+  Share, microphone). Under 1060 px the tools' labels sit under their icons (`.btn.tool` column). A brass dot on
+  Practice while a loop, one hand or the music is on. **Mark toolbar**: tools row (Pen, Highlight, Text, Stamps, 1–5,
+  Eraser; Undo, Clear page, Done) and an options row (3 inks + `<input type=color>` wheel; highlighter colors + wheel;
+  fingers; stamps drawn on canvases; size slider 0.3–3), kept in `pt-pen`. Stamps (`STAMPS`, `drawStamp`: pp…ff, sfz,
+  hairpins, accent, staccato, tenuto, fermata, breath, caesura, Ped., release, circle, check, glasses) as
+  `{ t: "stamp", k, x, y, c, z }`; text notes `{ t: "note", s, ... }` typed in `#noteInput`. **Metronome card**: typed
+  tempo (`#metroTempo`), slider 20–300, tap tempo, beats 1–12 over 2/4/8 (compound x/8 grouped in threes), 1–4 clicks
+  a beat, tempo name, beat dots, draggable; `pt-metro`; the ladder compares in the metronome's own beats.
+  **Hands** (`keepHand` in score.js; notes now carry `staff`): one-hand reference built by `handLesson` (cached per
+  piece and hand), used by Follow, Hear the music and Check my notes; session summaries keep `hand`. **Hear the music**
+  (`startHear`): the score (one hand if chosen) synthesized from the first bar on the page showing, up to 4 minutes,
+  speed 40–150% (re-synthesized from the playing bar), highlight and pages follow; mode `hear`. **Trouble spots**
+  (`engine/trouble.js`): bars scored from the last 8 sessions (hesitations, Check my notes results kept as
+  `notes.byMeasure`, bars under 0.75x the tempo around), passages of up to 4 bars; tapping one sets the loop, opens the
+  metronome at 70% of the pianist's tempo there with the ladder up to it, and moves to the next spot at the goal.
+  **Mistake history**: Check my notes results saved in the session summary (`keepNoteCheck`); the journal's "Notes over
+  time" (`noteHistory`: per-100 rate chart, bars still tripping, bars fixed). **Not in my music** (report) adds notes to
+  `<key>|ignore`, skipped by `checkNotes`. **Edit pages** (`pages.js`, pdf-lib 1.17.1 in `vendor/pdf-lib/`): thumbnails,
+  move, turn, take out (blank pages found by ink), add pages from PDFs; Save replaces the piece (new key: markings
+  remapped with rotation by `remapMarks`, bookmarks, practice history, setlists moved, old piece removed, sheet music
+  re-added with its options; taught sections dropped), or Save as a copy. **Add music** (Library; `importer.js`
+  `pairFiles`): several files at once; PDFs paired with .mxl by name (`baseName` drops `.mvt1`, `(1)`, punctuation),
+  sheet music for a kept piece of that name, a lone PDF + lone .mxl together, `.scoreatlas` bundles restored.
+  **Share a setlist**: `makeBackup({ keys, setlist })` (those pieces' PDFs, lessons, markings; no practice or
+  settings), opened with Add music. **Mac helper** (`mac/`): `Install ScoreAtlas Reader.command` finds Audiveris,
+  writes `~/Library/Application Support/ScoreAtlas Reader/read.sh` (Audiveris `-batch -export`, copies the PDF and its
+  .mxl into iCloud Drive/ScoreAtlas, notifications, log in ~/Library/Logs) and compiles a droplet app on the Desktop
+  with `osacompile`; `mac/ScoreAtlas-Reader.zip` keeps the executable bit; tested here with stand-in Mac tools.
+  **Following** (their recording, 6.8 min of practice): the reference built from sheet music had no quiet before
+  bar 1 while the live query began with quiet, so starting at bar 1 matched badly and Follow jumped to identical bars
+  25–27 on page 3: `search()` now drops quiet before the playing (when 0.8 s+ of it remains); the page on screen when
+  Follow starts holds like a flipped page (`anchor` from the constructor's `page`; the clock runs only while
+  playing), and the periodic check goes back to the anchor's copy when it fits within `pageAmbiguity` of where the
+  follower is (on rec3 with flips 93% → 95%, rec4 95%; synthetic suites unchanged); once the music has been heard
+  on the anchor's page (`seen`), a jump elsewhere drops the anchor (the pianist moved on; teach-follow's restart). **Check my notes verified** on
+  that recording: an independent onset-energy check from the audio (FFT at the written pitch's harmonics) shows
+  flagged-missed notes have little new energy (median 0.6 versus 2.3 for notes judged played; about 88% look truly
+  absent); the false flags came from wrong bar times (follower on another copy, squeezed bars): runs of playing with
+  over 40% of notes not found are now left out (`runUnsure`): 204 → 127 missed of 1249; 13 notes flagged every time
+  (likely OMR additions or notes the owner leaves out) → Not in my music. Release checklist updated
+  (`release/README.md`), store description (3278 characters) and support page mention the new features and the helper.
 - **Test 15:** the owner's Test 13/14 feedback ("really like all the features", UI good; followed well on
   run-throughs but had trouble finding them in practice: even after flipping to the page, it skipped to a section that
   was only similar), plus **wrong-note detection** (roadmap step 14). US spelling everywhere ("Practice", the owner
@@ -261,6 +309,7 @@ Steps are numbered across phases, in order. Work through them in that order unle
     file's systems don't fit): only the page's measure count is known; staves of a size, systems by gaps, and each
     system's count chosen by dynamic programming over barline clarity plus a share-by-width prior.
   - `hearing.js`: the "Hearing" note display.
+  - `trouble.js`: `troubleSpots(sessions, count)` and `troubleText` (see Test 16).
   - `notecheck.js`: wrong-note detection. `expectedNotes(bars, measures)` times the written notes from the bar entry
     times; `checkNotes(expected, heard)`: written and heard chords lined up by dynamic programming (`alignTimes`, so
     rubato inside a bar doesn't count as missing), then a written note is fine if heard at its pitch within 0.15 s (or
@@ -273,11 +322,16 @@ Steps are numbered across phases, in order. Work through them in that order unle
     `pitch.js` and the Node tool. The model hears nearly every note played, but adds overtones and echoes, and misses
     very soft notes. `pitch.js` pads each 32 s piece with silence on WebGL: TensorFlow.js fails to build a shader
     ("getT1: no matching overloaded function") for some lengths (26–27 s in headless Chromium); it tries 32, 33, 34 s,
-    then the CPU.
+    then the CPU. Test 16: `checkNotes(expected, heard, cfg, soft, ignore)`; runs of playing (played index going on,
+    gaps under 2.5 s) with over 40% not found become "unsure".
 - `audio/capture-worklet.js` (audio thread) → `listen.js` (`Microphone`) → `FeatureExtractor`.
 - `store.js`: IndexedDB on the device: lessons keyed by PDF fingerprint plus page count (also `<key>|marks`,
   `<key>|practice`), the last opened PDF, the library and setlists.
-- `library.js`: the library panel (pieces and setlists). `marks.js`: Pencil markings. `sw.js`: offline.
+- `library.js`: the library panel (pieces and setlists; Share). `marks.js`: Pencil markings (stamps, text notes).
+  `sw.js`: offline (cache `page-turner-v2`). `pages.js`: Edit pages. `importer.js`: pairing added files.
+  `metronome.js`: `Metronome` (beats, unit, subdiv, tap) and `TempoLadder`. `journal.js`: journal and `noteHistory`.
+- `mac/`: the ScoreAtlas Reader helper for the owner's Mac (see Test 16).
+- `vendor/pdf-lib/`: pdf-lib 1.17.1 (ESM, minified; edits PDFs losslessly). MIT.
 - `app.js`: viewer, pedal, taps, Teach and Follow, test card. `window.pageTurner` exposes the audio clock and a
   log of page turns for tests and troubleshooting.
 - `vendor/pdfjs/`: pdfjs-dist 4.10.38, *legacy* build so older iPadOS Safari works. Apache-2.0.
@@ -306,6 +360,12 @@ Steps are numbered across phases, in order. Work through them in that order unle
     practice sessions with sections). Currently all pass (14/14 found, 10/10 turns).
   - `node tests/recorder-unit.js`: the recorder (length, clock, a 440 Hz tone kept, the limit).
   - `node tests/practice-unit.js`: practice insights from made-up sessions (plays, hesitations, tempo, loop).
+  - `node tests/test16-unit.js`: trouble spots, pairing files, one hand, markings moved with pages, the metronome's
+    accents and tap tempo, notes over time.
+  - `NODE_PATH="$(npm root -g)" node tests/test16.cjs`: real browser, about a minute: Practice tools off without sheet
+    music, PDF + .mxl added together, left hand, Hear the music (and a new speed), trouble spots from a seeded
+    history (loop, metronome, ladder), notes over time in the journal, Edit pages (a stamp moves with its page, sheet
+    music matched again, library replaced) and sharing a setlist (a .scoreatlas download).
   - `node tests/notecheck-unit.js`: the note check on made-up notes (dropped, wrong, octave, rubato, soft notes,
     overtones, spill-over beside a wrong note, unheard bars, merged repeats).
   - Wrong-note detection: `npm install @tensorflow/tfjs@3.21.0` somewhere outside the repository, then

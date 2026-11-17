@@ -114,6 +114,11 @@ export class Searcher {
   // plus the cost of ending at every coarse lesson position (`row`) for costNear.
   search(frames) {
     const { cfg, factor, coarse: C } = this;
+    // quiet before the playing began says nothing about where it is, but would count against places that come after
+    // sound in the piece and for places after rests (and the very start of the piece has nothing before it at all)
+    let lead = 0;
+    while (lead < frames.length && !frames[lead].sounding) lead++;
+    if (lead > 0 && frames.length - lead >= 40) frames = frames.slice(lead);
     const Q = coarsen(frames.length, factor, (i) => frames[i], true);
     const n = Q.length, M = C.length;
     if (n === 0 || M === 0) return { candidates: [], row: null };

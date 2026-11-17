@@ -6,14 +6,18 @@ import { Microphone } from "./listen.js";
 import { NOTE_NAMES, BLACK_KEYS, FRAME_RATE } from "./engine/features.js";
 import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower, FOLLOW_SETTINGS } from "./engine/follower.js";
-import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData, savePiece, loadPiece, loadMeta, putMeta } from "./store.js";
-import { Marks, INKS } from "./marks.js";
+import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData, savePiece, loadPiece, loadMeta, putMeta, removePiece, loadSetlists, saveSetlists, listMeta } from "./store.js";
+import { Marks, INKS, STAMPS, drawStamp } from "./marks.js";
 import { LibraryUI } from "./library.js";
-import { Metronome, TempoLadder } from "./metronome.js";
+import { Metronome, TempoLadder, tempoName } from "./metronome.js";
+import { PageEditor, remapMarks } from "./pages.js";
+import { pairFiles } from "./importer.js";
+import { troubleSpots, troubleText } from "./engine/trouble.js";
+import { synthesize } from "./engine/synth.js";
 import { renderJournal } from "./journal.js";
 import { makeBackup, restoreBackup, shareFile, wavFile, markedPdf } from "./share.js";
 import { expectedNotes, checkNotes, noteName } from "./engine/notecheck.js";
-import { readScore, keepParts, withPageStarts, shiftPages, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
+import { readScore, keepParts, keepHand, withPageStarts, shiftPages, parsePageStarts, playOrder, suggestParts, timeline } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
 import { MeasureMarker } from "./engine/marker.js";
@@ -40,6 +44,7 @@ const overlay = document.createElement("div");
 overlay.className = "overlay";
 const loopBtn = $("loopBtn"), reportPanel = $("report"), reportBtn = $("reportBtn");
 let practice = null; // PracticeLog while following with sheet music
+let sessionHands = "both";
 let lastReport = null; // the most recent session's report
 let loop = null; // { from, to } measure indices of the passage being looped
 let loopPick = 0; // 1: waiting for the first bar to be tapped, 2: for the last
@@ -419,6 +424,7 @@ async function startTeach() {
   if (!state.pdf || mode !== "idle") return;
   const ready = startMic(); // must begin inside the tap
   stopNoteCheck(); // it would slow the listening down
+  stopHear();
   mode = "teach";
   teach = { frames: [], turns: [], startPage: state.page }; // a section starts wherever the pianist is
   updateButtons();
@@ -458,13 +464,61 @@ function finishTeach() {
   saveLesson(state.key, state.lesson).catch(() => toast("Couldn't save what was learned on this iPad.", 3000));
 }
 
+// Practicing one hand: the reference is the sheet music's notes for that hand only (built once per piece and hand)
+let hands = "both"; // "both", "left" or "right"
+const handCache = new Map(); // `${key}|${hand}` -> lesson
+// The sheet music as it was added (parts chosen, pages placed), from a section
+function scoreOf(sec) {
+  let score = keepParts(readScore(sec.scoreFile), sec.options && sec.options.parts);
+  const o = sec.options || {};
+  if (o.pageStarts && o.pageStarts.length) score = withPageStarts(score, o.pageStarts, o.firstPage || 1);
+  else score = shiftPages(score, o.firstPage || 1);
+  return score;
+}
+function handLesson(hand) {
+  const sec = scoreSectionOf();
+  if (!sec || hand === "both" || !sec.scoreFile) return state.lesson;
+  const key = `${state.key}|${hand}`;
+  if (handCache.has(key)) return handCache.get(key);
+  const score = keepHand(scoreOf(sec), hand);
+  if (!score.measures.some((m) => m.notes.length)) throw new Error(`the sheet music has no ${hand}-hand notes`);
+  const hs = scoreSection(score);
+  for (const k of ["layout", "measures", "pages", "name", "order", "scoreFile", "options", "partList", "barInfo"]) hs[k] = sec[k];
+  hs.hand = hand;
+  const lesson = { version: 2, sections: [hs] };
+  handCache.set(key, lesson);
+  return lesson;
+}
+async function setHands(hand) {
+  if (mode !== "idle") return;
+  hands = hand;
+  updateButtons();
+  if (hand === "both") { toast("Both hands", 1200); return; }
+  setStatus(`Learning the ${hand} hand…`);
+  await breathe();
+  try {
+    handLesson(hand);
+    setStatus(null);
+    toast(`${hand === "left" ? "Left" : "Right"} hand only: Follow listens for it, and Hear the music plays it`, 3000);
+  } catch (err) {
+    setStatus(null);
+    hands = "both";
+    toast(`Couldn't: ${err.message || err}`, 3000);
+  }
+  updateButtons();
+}
+for (const b of $("handsChoice").querySelectorAll("button")) b.addEventListener("click", () => setHands(b.dataset.hand));
+
 async function startFollow() {
   if (!state.lesson || mode !== "idle") return;
   const ready = startMic();
   stopNoteCheck(); // it would slow the listening down
+  stopHear();
+  let lesson = state.lesson;
+  try { lesson = handLesson(hands); } catch { hands = "both"; }
   mode = "follow";
   // Start from the page on screen: the pianist may begin anywhere, and the page is a hint where
-  follower = new Follower(state.lesson, {
+  follower = new Follower(lesson, {
     page: state.page,
     settings: followSettings(),
     onTurn: (page, why) => {
@@ -481,6 +535,7 @@ async function startFollow() {
   }
   loopState = { endReached: false, quiet: 0, reps: 0, last: null };
   ladder.seen = 0;
+  sessionHands = hands;
   startRecording();
   updateButtons();
   updateModebar();
@@ -525,6 +580,10 @@ window.pageTurner = {
   get notecheck() { return lastReport && lastReport.notecheck ? { checked: lastReport.notecheck.checked, missed: lastReport.notecheck.missed, wrong: lastReport.notecheck.wrong } : null; },
   get setlist() { return setlist ? { name: setlist.list.name, index: setlist.index, count: setlist.list.items.length } : null; },
   marks: () => marks.data(),
+  get key() { return state.key; },
+  get hands() { return hands; },
+  get hearing() { return hear ? { played: hearPlayed(), speed: hear.speed } : null; },
+  get loop() { return loop ? { ...loop } : null; },
 };
 
 function onFrame(frame) {
@@ -585,18 +644,22 @@ function updateButtons() {
   followBtn.disabled = !state.pdf || mode === "teach" || mode === "replay";
   $("teachDone").hidden = mode !== "teach";
   $("pieceTitle").textContent = state.pdf ? fileName.textContent : "ScoreAtlas";
-  $("practiceNote").hidden = !!lastReport || !!lastRecording;
   $("shareRecording").hidden = !lastRecording;
   scoreBtn.disabled = !state.pdf || mode !== "idle";
   applyBtn.disabled = mode !== "idle";
   const sec = scoreSectionOf();
-  loopBtn.hidden = !(sec && sec.layout && sec.layout.some(Boolean));
-  loopBtn.querySelector(".lbl").textContent = loopPick ? "Cancel" : loop ? "Loop off" : "Loop";
-  loopBtn.setAttribute("aria-label", loopPick ? "Cancel picking a loop" : loop ? "Loop off" : "Loop a passage");
+  const placed = !!(sec && sec.layout && sec.layout.some(Boolean));
+  loopBtn.querySelector(".lbl").textContent = loopPick ? "Cancel picking the loop" : loop ? "Turn the loop off" : "Loop a passage";
+  $("loopHint").textContent = loopPick === 1 ? "Now tap the first bar on the music" : loopPick === 2 ? "Now tap the last bar" : loop ? `Bars ${barName(sec, loop.from)}–${barName(sec, loop.to)}` : "Tap Loop, then the first and the last bar";
   loopBtn.setAttribute("aria-pressed", String(!!loop || !!loopPick));
-  loopBtn.disabled = mode === "teach" || mode === "replay";
+  loopBtn.disabled = !placed || mode === "teach" || mode === "replay";
+  for (const id of ["troubleBtn", "hearBtn"]) $(id).disabled = !placed || mode === "teach" || mode === "replay";
+  for (const b of $("handsChoice").querySelectorAll("button")) { b.disabled = !sec || mode !== "idle"; b.setAttribute("aria-pressed", String(b.dataset.hand === (sec ? hands : "both"))); }
+  $("practiceNote").hidden = placed;
+  $("practiceDot").hidden = !(loop || hands !== "both" || hear);
   $("replayBtn").hidden = !lastRecording;
   $("replayCardBtn").hidden = !lastRecording || mode !== "idle";
+  $("hearBtn").querySelector("b").textContent = hear ? "Stop the music" : "Hear the music";
   reportBtn.hidden = !lastReport;
   micBtn.textContent = micCheck ? "Stop" : "Check microphone";
   micBtn.setAttribute("aria-pressed", String(micCheck));
@@ -861,10 +924,11 @@ function finishPractice() {
   let r;
   try { r = practice.report(); } catch (err) { console.warn("practice report failed", err); return; }
   if (!r.bars.length) return;
-  lastReport = { ...r, sec, log: practice };
+  const date = Date.now();
+  lastReport = { ...r, sec, log: practice, hand: sessionHands, date, key: state.key };
   const key = state.key;
   const summary = {
-    date: Date.now(), seconds: Math.round(r.seconds), plays: [...r.plays], hesitations: [...r.hesitations],
+    date, hand: sessionHands, seconds: Math.round(r.seconds), plays: [...r.plays], hesitations: [...r.hesitations],
     tempo: r.longest ? r.longest.map((b) => [b.measure, b.tempo ? Math.round(b.tempo) : null]) : [],
     loop: r.loop ? playedRangeToMeasures(r.loop) : null, loopReps: r.loopReps.map((x) => Math.round(x.tempo)),
   };
@@ -966,11 +1030,15 @@ function renderReport() {
           const what = [missed.length ? `missed ${missed.join(", ")}` : "", wrong.length ? `played ${wrong.join(", ")}` : ""].filter(Boolean).join(" · ");
           const li = el("li");
           li.className = "notes-item";
-          li.append(goTo(m, `Bar ${name(m)}`), el("span", "notes-what", what), listen(here[0] ? here[0].tc : null));
+          const skip = el("button", "skip-btn", "Not in my music");
+          skip.type = "button";
+          skip.title = "The sheet music reader may have added these notes: don't check them again";
+          skip.addEventListener("click", () => ignoreNotes(r, here.filter((x) => x.status === "missed").length ? here.filter((x) => x.status === "missed") : here));
+          li.append(goTo(m, `Bar ${name(m)}`), el("span", "notes-what", what), listen(here[0] ? here[0].tc : null), skip);
           list.append(li);
         }
         body.append(list);
-        body.append(el("p", "note", "Bars with mistakes are marked in red on the music while this report is open. The sheet music reader can misread a note now and then: if the same note is flagged every time though you play it, the reading is probably wrong there."));
+        body.append(el("p", "note", "Bars with mistakes are marked in red on the music while this report is open. If a note is flagged every time though you play it, the sheet music reader probably misread it: tap Not in my music."));
       }
     }
   }
@@ -1248,7 +1316,7 @@ rpSeek.addEventListener("input", () => {
 });
 $("rpClose").addEventListener("click", () => { stopReplay(); backToMusic(); });
 $("replayBtn").addEventListener("click", () => startReplay(0));
-$("replayCardBtn").addEventListener("click", () => { setCard(false); startReplay(0); });
+$("replayCardBtn").addEventListener("click", () => { closePanels(); startReplay(0); });
 // play from a moment (engine clock) of the last session, a second early
 function replayFromClock(t) {
   if (!lastRecording) return;
@@ -1374,7 +1442,7 @@ forgetBtn.addEventListener("click", () => {
 
 teachBtn.addEventListener("click", () => {
   if (mode === "teach") finishTeach();
-  else { startTeach(); setCard(false); }
+  else { stopHear(); startTeach(); setCard(false); }
   backToMusic();
 });
 $("teachDone").addEventListener("click", () => { if (mode === "teach") finishTeach(); backToMusic(); });
@@ -1384,6 +1452,7 @@ followBtn.addEventListener("click", () => {
     toast("To follow this piece, add its sheet music or teach it (under Piece)", 3200);
     return;
   }
+  if (hear) stopHear();
   if (mode === "follow") stopMode();
   else startFollow();
   backToMusic();
@@ -1393,6 +1462,14 @@ followBtn.addEventListener("click", () => {
 const library = new LibraryUI($("library"), {
   onOpen: (key) => { setlist = null; showSetlistChip(); openFromLibrary(key); },
   onAdd: () => fileInput.click(),
+  onShare: async (sl) => {
+    toast("Packing the setlist…", 1500);
+    try {
+      const { bytes, pieces } = await makeBackup({ keys: sl.items, setlist: { ...sl } });
+      const res = await shareFile(bytes, `${sl.name.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Setlist"}.scoreatlas`, "application/zip");
+      if (res !== "cancelled") toast(`"${sl.name}" with ${plural(pieces, "piece")}: open it on the other iPad with Library → Add music`, 3600);
+    } catch (err) { toast(`Couldn't share the setlist: ${err.message || err}`, 3000); }
+  },
   onPlay: (list, index) => playSetlist(list, index),
 });
 
@@ -1491,28 +1568,101 @@ function setMarkMode(on) {
   document.body.classList.toggle("marking", on);
   markBtn.setAttribute("aria-pressed", String(on));
   if (on) { closePanels(); toast("Marking: write with the Pencil or a finger. Tap Done when finished.", 2500); }
+  else if (!$("noteInput").hidden) closeNoteInput();
 }
 markBtn.addEventListener("click", () => { setMarkMode(!marks.markMode); backToMusic(); });
-function pickTool(kind, color) {
-  marks.tool = { kind, color: color || INKS.black };
-  for (const b of markBar.querySelectorAll("[data-tool]")) {
-    const on = b.dataset.tool === kind && (!b.dataset.color || INKS[b.dataset.color] === marks.tool.color);
-    b.setAttribute("aria-pressed", String(on));
-  }
+// The Mark toolbar: a row of tools, and below it the chosen tool's options (colors, fingers, stamps) with a size slider
+const pen = { color: INKS.black, size: 1 };
+try { Object.assign(pen, JSON.parse(localStorage.getItem("pt-pen") || "{}")); } catch {}
+const savePen = () => { try { localStorage.setItem("pt-pen", JSON.stringify({ color: pen.color, size: pen.size, hl: marks.hlColor, tool: marks.tool.kind, stamp: marks.stamp })); } catch {} };
+function pickTool(kind) {
+  marks.tool = { kind, color: pen.color };
+  for (const b of markBar.querySelectorAll("[data-tool]")) b.setAttribute("aria-pressed", String(b.dataset.tool === kind));
+  $("inkRow").hidden = !["pen", "text", "stamp", "finger"].includes(kind);
+  $("hlRow").hidden = kind !== "highlight";
   $("digitRow").hidden = kind !== "finger";
+  $("stampRow").hidden = kind !== "stamp";
+  $("sizeWrap").hidden = kind === "erase";
+  $("markHint").hidden = kind !== "erase";
+  drawPenChoice();
+  savePen();
 }
-for (const b of markBar.querySelectorAll("[data-tool]")) b.addEventListener("click", () => pickTool(b.dataset.tool, b.dataset.color && INKS[b.dataset.color]));
+function drawPenChoice() {
+  for (const b of $("inkRow").querySelectorAll("[data-color]")) b.setAttribute("aria-pressed", String(b.dataset.color === pen.color));
+  const custom = !Object.values(INKS).includes(pen.color);
+  $("inkCustom").style.background = custom ? pen.color : "";
+  $("inkRow").querySelector(".wheel").setAttribute("aria-pressed", String(custom));
+  for (const b of $("hlRow").querySelectorAll("[data-hl]")) b.setAttribute("aria-pressed", String(b.dataset.hl === marks.hlColor));
+  const hlCustom = ![...$("hlRow").querySelectorAll("[data-hl]")].some((b) => b.dataset.hl === marks.hlColor);
+  $("hlCustom").style.background = hlCustom ? marks.hlColor : "";
+  $("hlRow").querySelector(".wheel").setAttribute("aria-pressed", String(hlCustom));
+  // the size dot shows the line as it will be drawn
+  const dot = $("sizeDot"), hl = marks.tool.kind === "highlight";
+  const px = hl ? Math.max(6, 16 * pen.size) : marks.tool.kind === "pen" ? Math.max(2, 4 * pen.size) : Math.max(8, 12 * Math.sqrt(pen.size));
+  dot.style.width = dot.style.height = `${Math.min(30, px)}px`;
+  dot.style.background = hl ? marks.hlColor : pen.color;
+  $("sizeSlider").value = String(pen.size);
+  for (const b of $("stampRow").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.stamp === marks.stamp));
+}
+function setInk(color) {
+  pen.color = color;
+  marks.tool = { ...marks.tool, color };
+  drawPenChoice();
+  savePen();
+}
+for (const b of markBar.querySelectorAll("[data-tool]")) b.addEventListener("click", () => pickTool(b.dataset.tool));
+for (const b of $("inkRow").querySelectorAll("[data-color]")) b.addEventListener("click", () => setInk(b.dataset.color));
+$("inkPicker").addEventListener("input", (e) => setInk(e.target.value));
+for (const b of $("hlRow").querySelectorAll("[data-hl]")) b.addEventListener("click", () => { marks.hlColor = b.dataset.hl; drawPenChoice(); savePen(); });
+$("hlPicker").addEventListener("input", (e) => { marks.hlColor = e.target.value; drawPenChoice(); savePen(); });
+$("sizeSlider").addEventListener("input", (e) => { pen.size = Number(e.target.value); marks.size = pen.size; drawPenChoice(); savePen(); });
 for (const b of $("digitRow").querySelectorAll("button")) b.addEventListener("click", () => {
   marks.digit = b.textContent;
   for (const x of $("digitRow").querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
 });
+// the stamps, each drawn as it will look on the music
+for (const [k, label] of STAMPS) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "stamp-btn";
+  b.dataset.stamp = k;
+  b.setAttribute("aria-label", label);
+  b.title = label;
+  const c = document.createElement("canvas");
+  c.width = 72; c.height = 48;
+  b.append(c);
+  b.addEventListener("click", () => { marks.stamp = k; drawPenChoice(); savePen(); });
+  $("stampRow").append(b);
+}
+function drawStampButtons() {
+  const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#1d1b18";
+  for (const b of $("stampRow").querySelectorAll("button")) {
+    const c = b.querySelector("canvas"), ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    drawStamp(ctx, b.dataset.stamp, c.width / 2, c.height / 2, 15, ink);
+  }
+}
+drawStampButtons();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawStampButtons);
 $("markUndo").addEventListener("click", () => { if (!marks.undo()) toast("Nothing to undo", 1000); });
-for (const b of $("sizeRow").querySelectorAll("button")) b.addEventListener("click", () => {
-  marks.size = Number(b.dataset.size);
-  for (const x of $("sizeRow").querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
-  try { localStorage.setItem("pt-pen-size", b.dataset.size); } catch {}
-});
-try { const z = localStorage.getItem("pt-pen-size"); if (z) $("sizeRow").querySelector(`[data-size="${z}"]`).click(); } catch {}
+// text notes: type the words where the page was tapped
+let notePlace = null;
+marks.onText = (page, x, y, cx, cy) => {
+  notePlace = { page, x, y };
+  const box = $("noteInput"), r = stand.getBoundingClientRect();
+  box.hidden = false;
+  box.style.left = `${Math.max(8, Math.min(r.width - 268, cx - r.left))}px`;
+  box.style.top = `${Math.max(8, Math.min(r.height - 120, cy - r.top))}px`;
+  $("noteText").value = "";
+  $("noteText").focus();
+};
+function closeNoteInput() { $("noteInput").hidden = true; notePlace = null; backToMusic(); }
+$("noteOk").addEventListener("click", () => { if (notePlace) marks.addNote(notePlace.page, notePlace.x, notePlace.y, $("noteText").value); closeNoteInput(); });
+$("noteCancel").addEventListener("click", closeNoteInput);
+$("noteText").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("noteOk").click(); } e.stopPropagation(); });
+for (const ev of ["pointerdown", "pointerup", "click"]) $("noteInput").addEventListener(ev, (e) => e.stopPropagation());
+marks.size = pen.size;
+try { const saved = JSON.parse(localStorage.getItem("pt-pen") || "{}"); if (saved.hl) marks.hlColor = saved.hl; if (saved.stamp) marks.stamp = saved.stamp; } catch {}
 $("markClear").addEventListener("click", (e) => {
   const b = e.currentTarget;
   if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Clear page"; }, 3000); return; }
@@ -1524,19 +1674,39 @@ $("markClear").addEventListener("click", (e) => {
   toast(any ? "Cleared (Undo brings it back)" : "No markings here", 1500);
 });
 $("markDone").addEventListener("click", () => { setMarkMode(false); backToMusic(); });
-pickTool("pen", INKS.black);
+try { pickTool(JSON.parse(localStorage.getItem("pt-pen") || "{}").tool || "pen"); } catch { pickTool("pen"); }
+
+/* ---------- The Practice menu ---------- */
+const practiceMenu = $("practiceMenu");
+$("practiceBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = practiceMenu.hidden;
+  closePanels();
+  practiceMenu.hidden = !open;
+  $("practiceBtn").setAttribute("aria-expanded", String(open));
+  updateButtons();
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!practiceMenu.hidden && !practiceMenu.contains(e.target) && !$("practiceBtn").contains(e.target)) { practiceMenu.hidden = true; $("practiceBtn").setAttribute("aria-expanded", "false"); }
+});
+// the menu's buttons do their thing and close it
+for (const id of ["loopBtn", "troubleBtn", "hearBtn", "openMetro", "reportBtn", "replayCardBtn", "journalBtn"]) {
+  $(id).addEventListener("click", () => { practiceMenu.hidden = true; $("practiceBtn").setAttribute("aria-expanded", "false"); });
+}
 
 /* ---------- View: two pages, half-page turns, and the performance lock ---------- */
 const viewMenu = $("viewMenu");
 $("viewBtn").addEventListener("click", (e) => {
   e.stopPropagation();
-  viewMenu.hidden = !viewMenu.hidden;
+  const open = viewMenu.hidden;
+  closePanels();
+  viewMenu.hidden = !open;
   $("viewBtn").setAttribute("aria-expanded", String(!viewMenu.hidden));
   $("twoUpToggle").checked = view.twoUp;
   $("halfToggle").checked = view.halfTurns;
 });
 document.addEventListener("pointerdown", (e) => {
-  if (!viewMenu.hidden && !viewMenu.contains(e.target) && e.target !== $("viewBtn")) { viewMenu.hidden = true; $("viewBtn").setAttribute("aria-expanded", "false"); }
+  if (!viewMenu.hidden && !viewMenu.contains(e.target) && !$("viewBtn").contains(e.target)) { viewMenu.hidden = true; $("viewBtn").setAttribute("aria-expanded", "false"); }
 });
 $("twoUpToggle").addEventListener("change", (e) => {
   view.twoUp = e.target.checked;
@@ -1758,31 +1928,62 @@ $("viewBtn").addEventListener("click", () => {
 });
 
 /* ---------- Metronome and the tempo ladder ---------- */
-const metroBar = $("metroBar"), beatDot = $("beatDot");
+const metroBar = $("metroBar");
 const metro = new Metronome({
-  onBeat: (beat, accent) => {
-    beatDot.classList.add("on");
-    beatDot.classList.toggle("accent", accent);
-    setTimeout(() => beatDot.classList.remove("on"), 110);
+  onBeat: (beat, accent, strength) => {
+    const dots = $("beatRow").children, d = dots[beat];
+    if (!d) return;
+    d.classList.add("on");
+    setTimeout(() => d.classList.remove("on"), 120);
   },
 });
+try { const m = JSON.parse(localStorage.getItem("pt-metro") || "{}"); for (const k of ["bpm", "beats", "unit", "subdiv"]) if (m[k]) metro[k] = m[k]; } catch {}
+const saveMetro = () => { try { localStorage.setItem("pt-metro", JSON.stringify({ bpm: metro.bpm, beats: metro.beats, unit: metro.unit, subdiv: metro.subdiv })); } catch {} };
+for (let n = 1; n <= 12; n++) { const o = document.createElement("option"); o.value = String(n); o.textContent = String(n); $("metroBeats").append(o); }
+// the beats of a bar as dots: the first is the downbeat; in 6/8, 9/8 and 12/8 each group of three starts with a bigger one
+function drawBeats() {
+  const row = $("beatRow");
+  row.textContent = "";
+  for (let b = 0; b < metro.beats; b++) {
+    const d = document.createElement("i");
+    d.dataset.level = String(metro.level(b));
+    row.append(d);
+  }
+}
 const ladder = new TempoLadder();
 const ladderOn = () => !metroBar.hidden && $("ladderOn").checked && !!loop;
+const UNIT_SIGN = { 2: "𝅗𝅥 =", 4: "♩ =", 8: "♪ =" };
 function drawMetro() {
-  $("metroTempo").textContent = `♩ ${metro.bpm}`;
+  if (document.activeElement !== $("metroTempo")) $("metroTempo").value = String(metro.bpm);
+  $("metroSlider").value = String(metro.bpm);
+  $("metroName").textContent = tempoName(metro.unit === 8 ? metro.bpm / 2 : metro.unit === 2 ? metro.bpm * 2 : metro.bpm);
+  $("metroUnit").textContent = UNIT_SIGN[metro.unit] || "♩ =";
   $("metroStart").textContent = metro.running ? "Stop" : "Start";
+  $("metroStart").setAttribute("aria-pressed", String(metro.running));
+  $("metroBeats").value = String(metro.beats);
+  $("metroUnitSel").value = String(metro.unit);
+  for (const b of $("subdivChoice").querySelectorAll("button")) b.setAttribute("aria-pressed", String(Number(b.dataset.sub) === metro.subdiv));
+  if ($("beatRow").children.length !== metro.beats) drawBeats();
   $("ladderWrap").hidden = !loop;
   $("ladderOpts").hidden = !($("ladderOn").checked && loop);
 }
-$("openMetro").addEventListener("click", () => { closePanels(); metroBar.hidden = false; drawMetro(); });
-const nudge = (d) => { metro.setTempo(metro.bpm + d); if (ladderOn()) ladder.tempo = metro.bpm; drawMetro(); };
-$("metroSlower").addEventListener("click", () => nudge(-2));
-$("metroFaster").addEventListener("click", () => nudge(2));
+$("openMetro").addEventListener("click", () => { closePanels(); metroBar.hidden = false; drawBeats(); drawMetro(); });
+const setBpm = (v) => { metro.setTempo(v); if (ladderOn()) ladder.tempo = metro.bpm; drawMetro(); saveMetro(); };
+$("metroSlower").addEventListener("click", () => setBpm(metro.bpm - 1));
+$("metroFaster").addEventListener("click", () => setBpm(metro.bpm + 1));
+$("metroSlider").addEventListener("input", (e) => setBpm(Number(e.target.value)));
+// type the tempo: applied when done (Return, or leaving the box)
+$("metroTempo").addEventListener("focus", (e) => e.target.select());
+$("metroTempo").addEventListener("change", (e) => { const v = parseInt(e.target.value, 10); if (v > 0) setBpm(v); else drawMetro(); });
+$("metroTempo").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") e.target.blur(); });
+$("metroTap").addEventListener("click", () => { const v = metro.tap(); if (v) setBpm(v); else toast("Keep tapping the beat", 1000); });
 $("metroStart").addEventListener("click", () => { metro.running ? metro.stop() : metro.start(); drawMetro(); backToMusic(); });
-$("metroBeats").addEventListener("change", (e) => { metro.beats = Number(e.target.value); });
+$("metroBeats").addEventListener("change", (e) => { metro.beats = Number(e.target.value); drawBeats(); drawMetro(); saveMetro(); });
+$("metroUnitSel").addEventListener("change", (e) => { metro.unit = Number(e.target.value); drawBeats(); drawMetro(); saveMetro(); });
+for (const b of $("subdivChoice").querySelectorAll("button")) b.addEventListener("click", () => { metro.subdiv = Number(b.dataset.sub); drawMetro(); saveMetro(); });
 $("metroSound").addEventListener("change", (e) => {
   metro.sound = e.target.checked;
-  if (metro.sound && mode === "follow") toast("The click may confuse following a little; the flashing dot never does", 2600);
+  if (metro.sound && mode === "follow") toast("The click may confuse following a little; the flashing dots never do", 2600);
 });
 $("ladderOn").addEventListener("change", (e) => {
   if (e.target.checked) {
@@ -1791,21 +1992,259 @@ $("ladderOn").addEventListener("change", (e) => {
     ladder.goal = Math.max(ladder.start, parseInt($("ladderGoal").value, 10) || 120);
     ladder.reset(metro.bpm);
     ladder.seen = practice ? practice.report({ refine: false }).loopReps.length : 0;
-    toast(`Tempo ladder: play the loop at ♩ ${ladder.tempo}; each clean time goes up by ${ladder.step}`, 3200);
+    toast(`Tempo ladder: play the loop at ${metro.bpm}; each clean time goes up by ${ladder.step}`, 3200);
   }
   drawMetro();
 });
 $("ladderStep").addEventListener("change", (e) => { ladder.step = Math.max(1, parseInt(e.target.value, 10) || 4); });
-$("ladderGoal").addEventListener("change", (e) => { ladder.goal = Math.max(30, parseInt(e.target.value, 10) || 120); });
+$("ladderGoal").addEventListener("change", (e) => { ladder.goal = Math.max(20, parseInt(e.target.value, 10) || 120); });
+for (const id of ["ladderStep", "ladderGoal"]) $(id).addEventListener("keydown", (e) => e.stopPropagation());
 $("metroClose").addEventListener("click", () => { metro.stop(); metroBar.hidden = true; backToMusic(); });
+makeMovable(metroBar, metroBar.querySelector(".metro-top"), "pt-metro-place");
 // after each repetition of the loop (called from loopFrame with the live report)
 function ladderCheck(r) {
   if (!ladderOn()) return;
   const hesitated = (rep) => r.bars.some((b) => b.t0 !== null && b.t0 >= rep.t0 - 0.05 && b.t0 < rep.t1 && b.hesitation);
-  const res = ladder.update(r.loopReps, hesitated);
-  if (res === "up") { metro.setTempo(ladder.tempo); drawMetro(); toast(`Clean! Next time: ♩ ${ladder.tempo}`, 2000); }
-  else if (res === "goal") { metro.setTempo(ladder.tempo); drawMetro(); toast(`Goal reached: ♩ ${ladder.tempo}. Well done!`, 3000); }
-  else if (res === "again") toast(`Once more at ♩ ${ladder.tempo}`, 1600);
+  const perBeat = metro.unit / 4; // quarter notes a minute -> the metronome's beats a minute
+  const res = ladder.update(r.loopReps.map((x) => ({ ...x, tempo: x.tempo * perBeat })), hesitated);
+  if (res === "up") { metro.setTempo(ladder.tempo); drawMetro(); toast(`Clean! Next time: ${ladder.tempo}`, 2000); if (trouble) trouble.clean++; }
+  else if (res === "goal") { metro.setTempo(ladder.tempo); drawMetro(); toast(trouble && trouble.next ? `Goal reached: ${ladder.tempo}. On to the next trouble spot?` : `Goal reached: ${ladder.tempo}. Well done!`, 3200); if (trouble) troubleDone(); }
+  else if (res === "again") toast(`Once more at ${ladder.tempo}`, 1600);
+}
+
+/* ---------- Hear the music: the sheet music played, from the page on screen, with the bar highlight ---------- */
+let hear = null; // { ctx, src, startAt, starts, k0, order, sec, speed, raf, paused }
+const HEAR_MAX = 240; // seconds of music made at a time
+async function startHear(fromPlayed = null) {
+  const sec = scoreSectionOf();
+  if (!sec || !sec.scoreFile || (mode !== "idle" && mode !== "hear")) return;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const ctx = hear ? hear.ctx : new Ctx(); // made inside the tap, so the iPad lets it sound
+  ctx.resume().catch(() => {});
+  stopHear(true);
+  mode = "hear";
+  updateButtons();
+  setStatus("Getting the music ready…");
+  await breathe();
+  try {
+    const order = Array.from(sec.order);
+    const score = keepHand(scoreOf(sec), hands);
+    const { starts, notes } = timeline(score, order);
+    let k0 = fromPlayed;
+    if (k0 === null) {
+      // the first bar on the page showing (the first time it comes, in playing order)
+      const page = shown.length ? shown[0].page : state.page;
+      k0 = order.findIndex((m) => sec.layout[m] && sec.layout[m].page === page);
+      if (k0 < 0) k0 = 0;
+    }
+    const speed = Number($("hearSpeed").value) || 1, t0 = starts[k0];
+    const part = notes.filter((n) => n.played >= k0 && n.t0 - t0 < HEAR_MAX * speed).map((n) => ({ midi: n.midi, t0: (n.t0 - t0) / speed + 0.15, t1: (n.t1 - t0) / speed + 0.15 }));
+    if (!part.length) throw new Error("there are no notes from here");
+    const audio = synthesize(part, 22050);
+    const buf = ctx.createBuffer(1, audio.length, 22050);
+    buf.getChannelData(0).set(audio);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = 1.6;
+    src.connect(gain).connect(ctx.destination);
+    const startAt = ctx.currentTime + 0.05;
+    src.start(startAt);
+    hear = { ctx, src, startAt, starts: Array.from(starts, (x) => (x - t0) / speed + 0.15), k0, order, sec, speed, raf: 0, paused: false };
+    src.onended = () => { if (hear && hear.src === src && !hear.paused) { toast("End of the music", 1600); stopHear(); } };
+    setStatus(null);
+    $("hearBar").hidden = false;
+    $("hearWhat").textContent = hands === "both" ? "Both hands" : hands === "left" ? "Left hand" : "Right hand";
+    tickHear();
+  } catch (err) {
+    setStatus(null);
+    toast(`Couldn't play the music: ${err.message || err}`, 3000);
+    stopHear();
+  }
+}
+function hearPlayed() {
+  const h = hear, t = h.ctx.currentTime - h.startAt;
+  let k = h.k0;
+  while (k + 1 < h.starts.length - 1 && h.starts[k + 1] <= t) k++;
+  return k;
+}
+function tickHear() {
+  const h = hear;
+  if (!h) return;
+  const k = hearPlayed(), m = h.order[k], box = h.sec.layout[m];
+  if (box) {
+    if (!showing(box.page, (box.y0 + box.y1) / 2)) show(box.page);
+    const at = entryFor(box);
+    if (at) { placeOnPage(marker, box, at.canvas); marker.hidden = false; }
+  }
+  $("hearTime").textContent = `bar ${barName(h.sec, m)}`;
+  h.raf = requestAnimationFrame(tickHear);
+}
+function stopHear(keepCtx = false) {
+  if (!hear) return;
+  cancelAnimationFrame(hear.raf);
+  try { hear.src.onended = null; hear.src.stop(); } catch {}
+  if (!keepCtx) hear.ctx.close().catch(() => {});
+  hear = null;
+  $("hearBar").hidden = true;
+  marker.hidden = true;
+  if (mode === "hear") mode = "idle";
+  updateButtons();
+}
+$("hearBtn").addEventListener("click", () => { if (hear) stopHear(); else { closePanels(); startHear(); } });
+$("hearClose").addEventListener("click", () => { stopHear(); backToMusic(); });
+$("hearPlay").addEventListener("click", () => {
+  const h = hear;
+  if (!h) return;
+  h.paused = !h.paused;
+  if (h.paused) h.ctx.suspend(); else h.ctx.resume();
+  $("hearPlay").querySelector("use").setAttribute("href", h.paused ? "#i-play" : "#i-pause");
+  $("hearPlay").setAttribute("aria-label", h.paused ? "Play" : "Pause");
+});
+$("hearSpeed").addEventListener("input", (e) => { $("hearSpeedText").textContent = `${Math.round(Number(e.target.value) * 100)}%`; });
+// a new speed starts again from the bar being played
+$("hearSpeed").addEventListener("change", () => { if (hear) startHear(hearPlayed()); });
+
+/* ---------- Trouble spots: loop the passages that keep tripping the pianist up, slower, then faster ---------- */
+let trouble = null; // { spots, index, clean, next } while working through them
+async function showTrouble() {
+  const sec = scoreSectionOf();
+  if (!sec) return;
+  openPanel("troublePanel");
+  const body = $("troubleBody");
+  body.textContent = "";
+  const data = state.key ? await loadLesson(`${state.key}|practice`) : null;
+  const sessions = (data && data.sessions) || [];
+  const spots = troubleSpots(sessions, sec.measures || sec.layout.length);
+  if (!spots.length) {
+    body.append(el("p", "report-sum", sessions.length ? "No trouble spots: nothing tripped you up in your recent sessions." : "Nothing yet."),
+      el("p", "note", "Practice with Follow and tap Stop (and Check my notes, in the report). The bars where you hesitate, slow down or miss notes show up here."));
+    return;
+  }
+  const list = el("ul", "trouble-list");
+  spots.forEach((sp, i) => {
+    const li = el("li");
+    const go = el("button", "trouble-go");
+    go.type = "button";
+    go.append(el("b", null, sp.from === sp.to ? `Bar ${barName(sec, sp.from)}` : `Bars ${barName(sec, sp.from)}–${barName(sec, sp.to)}`), el("span", null, troubleText(sp)));
+    go.addEventListener("click", () => practiceSpot(spots, i));
+    li.append(el("span", "trouble-rank", String(i + 1)), go);
+    list.append(li);
+  });
+  body.append(list);
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+// loop a spot with the metronome and the tempo ladder: about 70% of the pianist's usual tempo there, up to it
+function practiceSpot(spots, i) {
+  const sp = spots[i], sec = scoreSectionOf();
+  if (!sp || !sec) return;
+  closePanels();
+  loop = { from: sp.from, to: sp.to };
+  loopPick = 0;
+  if (practice) practice.setLoop(...playedRange(loop));
+  const goal = Math.round((sp.tempo || 90) * (metro.unit / 4));
+  metro.setTempo(Math.max(30, Math.round(goal * 0.7)));
+  $("ladderStep").value = String(Math.max(2, Math.round(goal * 0.06)));
+  $("ladderGoal").value = String(goal);
+  metroBar.hidden = false;
+  drawBeats();
+  $("ladderOn").checked = true;
+  $("ladderOn").dispatchEvent(new Event("change"));
+  trouble = { spots, index: i, clean: 0, next: i + 1 < spots.length ? spots[i + 1] : null };
+  const box = sec.layout[sp.from];
+  if (box) show(box.page);
+  updateButtons();
+  drawOverlay();
+  toast(`Trouble spot ${i + 1}: loop ${sp.from === sp.to ? `bar ${barName(sec, sp.from)}` : `bars ${barName(sec, sp.from)}–${barName(sec, sp.to)}`} at ${metro.bpm}, then faster. Tap Follow and play.`, 4200);
+}
+function troubleDone() {
+  const t = trouble;
+  trouble = null;
+  if (t && t.next) setTimeout(() => { if (mode !== "teach") practiceSpot(t.spots, t.index + 1); }, 2500);
+}
+$("troubleBtn").addEventListener("click", () => showTrouble());
+makeMovable($("troublePanel"), $("troublePanel").querySelector(".panel-head"), "pt-trouble-place");
+
+/* ---------- Page tools ---------- */
+const pageEditor = new PageEditor($("pagesPanel"), {
+  loadDoc: async (bytes) => (await loadPdfLib()).getDocument({ data: bytes, isEvalSupported: false }).promise,
+  toast,
+  onSave: async ({ bytes, mapping, asCopy }) => {
+    const oldKey = state.key, oldName = fileName.textContent;
+    const oldMeta = await loadMeta(oldKey);
+    const name = asCopy ? `${oldName} (edited)` : oldName;
+    const [lesson, marked, practiced, booked] = await Promise.all([loadLesson(oldKey), loadLesson(`${oldKey}|marks`), loadLesson(`${oldKey}|practice`), loadLesson(`${oldKey}|bookmarks`)]);
+    const copy = bytes.slice();
+    if (!(await openPdf(bytes, `${name}.pdf`))) throw new Error("the new PDF didn't open");
+    const key = state.key;
+    await savePiece(key, `${name}.pdf`, copy, { key, name, pages: state.count, added: oldMeta ? oldMeta.added : Date.now(), opened: Date.now(), thumb: await thumbnailOf() });
+    saveLastFile(`${name}.pdf`, copy).catch(() => {});
+    fileName.textContent = name;
+    // markings and bookmarks move with their pages; the practice history stays with the piece
+    const moved = remapMarks(marked, mapping);
+    await saveLesson(`${key}|marks`, moved);
+    marks.load(moved);
+    if (booked && booked.list) {
+      const where = (n) => mapping.findIndex((m) => m.src === 0 && m.page === n) + 1;
+      await saveLesson(`${key}|bookmarks`, { list: booked.list.map((b) => ({ ...b, page: where(b.page) })).filter((b) => b.page > 0) });
+    }
+    if (practiced && !asCopy) await saveLesson(`${key}|practice`, practiced);
+    if (!asCopy) {
+      const lists = await loadSetlists();
+      for (const sl of lists) sl.items = sl.items.map((k) => (k === oldKey ? key : k));
+      await saveSetlists(lists);
+      await removePiece(oldKey);
+    }
+    // the sheet music is matched to the new pages again; a taught playthrough can't be (its pages changed)
+    const sec = sectionsOf(lesson).find((x) => x.fromScore);
+    const taught = sectionsOf(lesson).some((x) => !x.fromScore);
+    if (sec && sec.scoreFile) await addScore(sec.scoreFile, sec.name || name, { ...sec.options });
+    toast(`Saved: ${plural(state.count, "page")}.${taught ? " Teach it again, if you had taught it (its pages changed)." : ""}`, 4000);
+  },
+});
+$("editPagesBtn").addEventListener("click", async () => {
+  if (!state.pdf || mode !== "idle") return;
+  const piece = state.key ? await loadPiece(state.key) : null;
+  if (!piece) { toast("Open the piece from the Library first", 2500); return; }
+  closePanels("pages");
+  pageEditor.open(state.pdf, piece.bytes, fileName.textContent);
+});
+
+/* ---------- Adding music: PDFs, their sheet music and shared setlists, several at once ---------- */
+async function addFiles(files) {
+  const metas = await listMeta();
+  const plan = pairFiles(files, metas.map((m) => m.name));
+  const read = async (f) => new Uint8Array(await f.arrayBuffer());
+  let added = 0, scores = 0;
+  try {
+    for (const b of plan.bundles) {
+      const res = await restoreBackup(await read(b));
+      toast(res.shared ? `Added ${typeof res.shared === "string" ? `the setlist "${res.shared}"` : "the shared music"}: ${plural(res.pieces, "piece")}` : `Restored ${plural(res.pieces, "piece")}`, 3000);
+      library.refresh && library.refresh();
+    }
+    // sheet music for pieces already kept: open each and add it
+    for (const { score, name } of plan.toLibrary) {
+      const meta = metas.find((m) => m.name === name);
+      if (meta && (await openFromLibrary(meta.key))) { await addScore(await read(score), score.name); scores++; }
+    }
+    for (const { pdf, score } of plan.pieces) {
+      const data = await read(pdf), copy = data.slice();
+      if (!(await openPdf(data, pdf.name))) continue;
+      saveLastFile(pdf.name, copy).catch(() => {});
+      await rememberPiece(pdf.name, copy);
+      added++;
+      if (score) { await addScore(await read(score), score.name); scores++; }
+    }
+    // sheet music that matched no PDF: for the piece that is open
+    if (plan.loose.length && state.pdf) {
+      for (const score of plan.loose.slice(0, 1)) { await addScore(await read(score), score.name); scores++; }
+    }
+  } catch (err) {
+    setStatus(`Couldn't add the files: ${err.message || err}. If they're in iCloud, download them to the iPad first.`, "error");
+    return;
+  }
+  if (added + scores > 1) toast(`Added ${plural(added, "piece")}${scores ? ` (${scores} with sheet music)` : ""}`, 3200);
+  if (plan.other.length) toast(`Skipped ${plan.other.map((f) => f.name).join(", ")}: not a PDF, MusicXML or ScoreAtlas file`, 3500);
 }
 
 /* ---------- Practice journal ---------- */
@@ -1899,9 +2338,12 @@ async function checkMyNotes() {
       for (const n of got.notes) heard.push({ ...n, t: n.t + s0 / R.rate + R.startTime });
       for (const n of got.soft) soft.push({ ...n, t: n.t + s0 / R.rate + R.startTime });
     }
-    const score = keepParts(readScore(sec.scoreFile), sec.options && sec.options.parts);
+    const score = keepHand(keepParts(readScore(sec.scoreFile), sec.options && sec.options.parts), r.hand);
     const expected = expectedNotes(r.bars.filter((b) => b.t0 !== null && b.t0 >= (chosen[0] ? chosen[0].a - 0.01 : 0)), score.measures);
-    r.notecheck = checkNotes(expected, heard, undefined, soft);
+    r.noteInput = { expected, heard, soft };
+    const ignore = new Set(((await loadLesson(`${r.key}|ignore`)) || {}).notes || []);
+    r.notecheck = checkNotes(expected, heard, undefined, soft, ignore);
+    keepNoteCheck(r);
     say(null);
     renderReport();
     drawOverlay();
@@ -1912,6 +2354,32 @@ async function checkMyNotes() {
   } finally {
     noteJob = null;
   }
+}
+
+// The check's results go with the session's summary, for the practice journal's "notes over time"
+function keepNoteCheck(r) {
+  const nc = r.notecheck;
+  const notes = { checked: nc.checked, missed: nc.missed, wrong: nc.wrong, byMeasure: [...nc.byMeasure].map(([m, v]) => [m, v.missed + v.wrong, v.total]) };
+  loadLesson(`${r.key}|practice`).then((old) => {
+    const sessions = (old && old.sessions) || [];
+    const s = sessions.find((x) => x.date === r.date);
+    if (!s) return null;
+    s.notes = notes;
+    return saveLesson(`${r.key}|practice`, { sessions });
+  }).catch(() => {});
+}
+// "Not in my music": the sheet music reader added notes the pianist's edition doesn't have; leave them out from now on
+async function ignoreNotes(r, list) {
+  const key = `${r.key}|ignore`;
+  const old = ((await loadLesson(key)) || {}).notes || [];
+  const set = new Set([...old, ...list.map((x) => `${x.measure}|${x.midi}`)]);
+  await saveLesson(key, { notes: [...set] }).catch(() => {});
+  const { expected, heard, soft } = r.noteInput;
+  r.notecheck = checkNotes(expected, heard, undefined, soft, set);
+  keepNoteCheck(r);
+  renderReport();
+  drawOverlay();
+  toast(`Left out from now on: ${[...new Set(list.map((x) => noteName(x.midi)))].join(", ")} in bar ${barName(r.sec, list[0].measure)}`, 2600);
 }
 
 /* ---------- Share with a teacher ---------- */
@@ -2075,7 +2543,11 @@ $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
 $("libraryBtn").addEventListener("click", () => { closePanels("library"); library.open(); });
 // Only one panel at a time (and the View menu closes too)
 function closePanels(except) {
-  for (const id of ["settingsPanel", "helpPanel", "journalPanel"]) if (except !== id) $(id).hidden = true;
+  for (const id of ["settingsPanel", "helpPanel", "journalPanel", "troublePanel"]) if (except !== id) $(id).hidden = true;
+  if (except !== "pages" && pageEditor.isOpen) pageEditor.close();
+  practiceMenu.hidden = true;
+  $("practiceBtn").setAttribute("aria-expanded", "false");
+  $("viewBtn").setAttribute("aria-expanded", "false");
   if ($("gotoMenu")) $("gotoMenu").hidden = true;
   if (except !== "card" && !card.hidden) { card.hidden = true; helpBtn.setAttribute("aria-expanded", "false"); }
   if (except !== "report" && !reportPanel.hidden) { reportPanel.hidden = true; drawOverlay(); }
@@ -2084,7 +2556,11 @@ function closePanels(except) {
 }
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!viewMenu.hidden) viewMenu.hidden = true;
+  if (!$("noteInput").hidden) closeNoteInput();
+  else if (!practiceMenu.hidden) practiceMenu.hidden = true;
+  else if (!viewMenu.hidden) viewMenu.hidden = true;
+  else if (pageEditor.isOpen) pageEditor.close();
+  else if (!$("troublePanel").hidden) $("troublePanel").hidden = true;
   else if (!$("tour").hidden) endTour();
   else if (!$("settingsPanel").hidden) $("settingsPanel").hidden = true;
   else if (!$("helpPanel").hidden) $("helpPanel").hidden = true;
@@ -2096,22 +2572,10 @@ window.addEventListener("keydown", (e) => {
   else if (!card.hidden) setCard(false);
 });
 fileInput.addEventListener("change", async () => {
-  const file = fileInput.files && fileInput.files[0];
+  const files = [...(fileInput.files || [])];
   fileInput.value = "";
   backToMusic();
-  if (!file) return;
-  let data;
-  try {
-    data = new Uint8Array(await file.arrayBuffer());
-  } catch {
-    setStatus(`Couldn't read ${file.name}. If it's in iCloud, download it to the iPad first.`, "error");
-    return;
-  }
-  const copy = data.slice(); // the PDF reader takes over `data`, so keep our own copy to save
-  if (await openPdf(data, file.name)) {
-    saveLastFile(file.name, copy).catch(() => {});
-    rememberPiece(file.name, copy);
-  }
+  if (files.length) await addFiles(files);
 });
 function setCard(open) {
   if (open) { closePanels("card"); updateButtons(); }
