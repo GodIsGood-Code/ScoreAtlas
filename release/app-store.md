@@ -12,7 +12,8 @@ Everything App Store Connect asks for, written and checked against Apple's lengt
 | Secondary category | Education | |
 | Price | Free | |
 | Age rating | 4+ (answer "None" to every content question) | |
-| Copyright | © 2026 [your name] | |
+| Copyright | © 2026 Ethan Chen | |
+| Contact email (for Apple and the support page) | heart.of.Eitanium@gmail.com | |
 | Support URL | https://godisgood-code.github.io/ScoreAtlas/support.html | |
 | Marketing URL (optional) | https://godisgood-code.github.io/ScoreAtlas/ | |
 | Privacy Policy URL | https://godisgood-code.github.io/ScoreAtlas/privacy.html | |

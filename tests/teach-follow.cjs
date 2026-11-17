@@ -71,6 +71,13 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
   const kept = await page.waitForFunction(() => document.querySelector('#followBtn').dataset.ready === 'true', null, { timeout: 8000 }).then(() => true, () => false);
   check('the lesson is still there after reopening', kept);
   await page.click('#followBtn');
+  // the test machine's fake microphone sometimes fails to start in a second browser session: try once more
+  await page.waitForTimeout(800);
+  if ((await page.evaluate(() => window.pageTurner.mode)) !== 'follow') {
+    console.log('note: Follow did not start the first time:', await page.evaluate(() => document.querySelector('#earNote').textContent || '(no microphone message)'));
+    await page.keyboard.press('Escape');
+    await page.click('#followBtn');
+  }
   await waitAudio(page, followT.turns[0] + 0.4);
   fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
   await page.screenshot({ path: path.join(__dirname, 'output/following.png') });

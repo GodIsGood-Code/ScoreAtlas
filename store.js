@@ -54,7 +54,30 @@ export const listMeta = () => run("files", "readonly", (s) => s.getAll(IDBKeyRan
 export async function removePiece(key) {
   await run("files", "readwrite", (s) => { s.delete(`piece|${key}`); return s.delete(`meta|${key}`); });
   // and what the app learned about it: the lesson, Pencil markings, practice history
-  await run("lessons", "readwrite", (s) => { s.delete(key); s.delete(`${key}|marks`); return s.delete(`${key}|practice`); }).catch(() => {});
+  await run("lessons", "readwrite", (s) => { s.delete(key); s.delete(`${key}|marks`); s.delete(`${key}|bookmarks`); return s.delete(`${key}|practice`); }).catch(() => {});
 }
 export const loadSetlists = () => run("files", "readonly", (s) => s.get("setlists")).then((x) => x || []).catch(() => []);
 export const saveSetlists = (lists) => run("files", "readwrite", (s) => s.put(lists, "setlists"));
+
+// Everything in a store as [key, value] pairs, and putting pairs back (for backups)
+export async function entries(storeName) {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, "readonly");
+    const st = tx.objectStore(storeName);
+    const keys = st.getAllKeys(), values = st.getAll();
+    tx.oncomplete = () => resolve(keys.result.map((k, i) => [k, values.result[i]]));
+    tx.onerror = () => reject(tx.error);
+  });
+}
+export async function putEntries(storeName, list) {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const st = tx.objectStore(storeName);
+    for (const [k, v] of list) st.put(v, k);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}

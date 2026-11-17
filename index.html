@@ -32,19 +32,30 @@
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-metro" viewBox="0 0 24 24"><path d="M9 3h6l4 18H5z"/><path d="M12 15l5-8"/><path d="M7.5 15h9"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M7 3.5h10v17l-5-4-5 4z"/></symbol>
   </svg>
   <div class="app">
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 13</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 14</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
       <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
       <div class="counter" role="group" aria-label="Pages">
         <button id="prevBtn" class="btn icon flat" type="button" aria-label="Previous page"><svg class="i"><use href="#i-left"/></svg></button>
-        <output id="pageNum" aria-live="polite">– / –</output>
+        <output id="pageNum" aria-live="polite" role="button" tabindex="0" aria-haspopup="true" title="Go to a page, a bar or a bookmark">– / –</output>
+        <div class="goto-menu" id="gotoMenu" hidden>
+          <p class="menu-title">Go to</p>
+          <form class="goto-row" id="gotoPageForm"><label for="gotoPage">Page</label><input id="gotoPage" type="text" inputmode="numeric" autocomplete="off"><button class="btn small" type="submit">Go</button></form>
+          <form class="goto-row" id="gotoBarForm"><label for="gotoBar">Bar</label><input id="gotoBar" type="text" inputmode="numeric" autocomplete="off"><button class="btn small" type="submit">Go</button></form>
+          <p class="note" id="gotoBarNote">Going to a bar needs the piece's sheet music.</p>
+          <p class="menu-title">Bookmarks</p>
+          <ul class="bookmarks" id="bookmarkList"></ul>
+          <button id="addBookmark" class="btn small wide" type="button"><svg class="i"><use href="#i-bookmark"/></svg><span>Bookmark this page</span></button>
+        </div>
         <button id="nextBtn" class="btn icon flat" type="button" aria-label="Next page"><svg class="i"><use href="#i-right"/></svg></button>
       </div>
       <div class="controls">
@@ -55,6 +66,9 @@
             <p class="menu-title">Display</p>
             <label class="switch"><input id="twoUpToggle" type="checkbox"><span><b>Two pages side by side</b><small>When the iPad is sideways</small></span></label>
             <label class="switch"><input id="halfToggle" type="checkbox"><span><b>Half-page turns</b><small>The next page's top half shows while you play the bottom of this one</small></span></label>
+            <label class="switch"><input id="cropToggle" type="checkbox"><span><b>Trim margins</b><small>Bigger music: the empty edges of each page are left out</small></span></label>
+            <label class="switch"><input id="darkPagesToggle" type="checkbox"><span><b>Dark pages</b><small>Light notes on dark paper, for dim stages</small></span></label>
+            <button id="openMetro" class="btn wide" type="button"><svg class="i"><use href="#i-metro"/></svg><span>Metronome</span></button>
             <button id="lockBtn" class="btn wide" type="button"><svg class="i"><use href="#i-lock"/></svg><span>Lock for performing</span></button>
             <p class="note">Locked, only the pedal turns pages; taps and the Pencil do nothing.</p>
             <div class="menu-links"><button id="openSettings" class="btn small" type="button">Settings</button><button id="openHelp" class="btn small" type="button">Help</button></div>
@@ -93,6 +107,18 @@
           <button id="markDone" class="btn small primary" type="button">Done</button>
         </span>
       </div>
+      <div class="metrobar floatbar" id="metroBar" hidden role="group" aria-label="Metronome">
+        <span class="beat-dot" id="beatDot" aria-hidden="true"></span>
+        <button id="metroSlower" class="btn small icon" type="button" aria-label="Slower">−</button>
+        <output id="metroTempo" class="metro-tempo">♩ 80</output>
+        <button id="metroFaster" class="btn small icon" type="button" aria-label="Faster">+</button>
+        <button id="metroStart" class="btn small primary" type="button">Start</button>
+        <select id="metroBeats" aria-label="Beats in a bar"><option value="2">2/4</option><option value="3">3/4</option><option value="4" selected>4/4</option><option value="6">6/8</option></select>
+        <label class="mini-check"><input id="metroSound" type="checkbox"> Click</label>
+        <label class="mini-check" id="ladderWrap" hidden><input id="ladderOn" type="checkbox"> Tempo ladder</label>
+        <span class="ladder-opts" id="ladderOpts" hidden>+<input id="ladderStep" type="text" inputmode="numeric" value="4" aria-label="Step up by"> to <input id="ladderGoal" type="text" inputmode="numeric" value="120" aria-label="Goal tempo"></span>
+        <button id="metroClose" class="btn small icon flat" type="button" aria-label="Close the metronome"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
       <button id="unlockBtn" class="unlock" type="button" hidden aria-label="Hold to unlock"><svg class="i"><use href="#i-lock"/></svg><span>Hold to unlock</span></button>
       <div class="sheet" id="sheet"></div>
       <div class="status" id="status" hidden><span id="statusText"></span></div>
@@ -128,6 +154,14 @@
       <label class="heat-toggle"><input id="heatToggle" type="checkbox" checked> Tint the bars on the page by how often you played them</label>
     </aside>
 
+    <aside class="panel side" id="journalPanel" aria-label="Practice journal" hidden>
+      <div class="panel-head">
+        <div><p class="eyebrow">Practice journal</p><h2 id="journalTitle">This piece</h2></div>
+        <button class="btn icon flat panel-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="journalBody"></div>
+    </aside>
+
     <aside class="panel side" id="settingsPanel" aria-label="Settings" hidden>
       <div class="panel-head">
         <h2>Settings</h2>
@@ -149,6 +183,15 @@
         <h3>Appearance</h3>
         <div class="segmented" role="group" aria-label="Appearance" id="themeChoice">
           <button type="button" data-theme="auto">Automatic</button><button type="button" data-theme="light">Light</button><button type="button" data-theme="dark">Dark</button>
+        </div>
+      </section>
+      <section class="group">
+        <h3>Backup</h3>
+        <p class="note">Save everything (your library, markings, what pieces learned, practice history, setlists and settings) as one file, to Files, iCloud Drive or another device. Restoring adds it back.</p>
+        <div class="actions">
+          <button id="backupSave" class="btn small" type="button">Save a backup</button>
+          <button id="backupRestore" class="btn small" type="button">Restore from a backup</button>
+          <input id="restoreInput" type="file" accept=".scoreatlas,.zip,application/zip" hidden>
         </div>
       </section>
       <section class="group">
@@ -275,8 +318,17 @@
         <div class="actions">
           <button id="reportBtn" class="btn small" type="button" hidden>Practice report</button>
           <button id="replayCardBtn" class="btn small" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span>Listen back</span></button>
+          <button id="journalBtn" class="btn small" type="button">Practice journal</button>
         </div>
         <p class="note" id="practiceNote">After practising with Follow, tap Stop for a report of your session, and listen back to it.</p>
+      </section>
+
+      <section class="group">
+        <h3>Share with your teacher</h3>
+        <div class="actions">
+          <button id="shareMarked" class="btn small" type="button">PDF with my markings</button>
+          <button id="shareRecording" class="btn small" type="button" hidden>Recording of the last session</button>
+        </div>
       </section>
 
       <section class="group ear" aria-label="Notes the app hears">
@@ -292,11 +344,13 @@
       </section>
 
       <details class="group whatsnew">
-        <summary>What's new in Test 13</summary>
+        <summary>What's new in Test 14</summary>
         <ol>
-          <li><b>Settings</b> (here below, or under View): turn pages earlier or later, the bar highlight, tap to turn, keeping the screen on, light or dark.</li>
-          <li><b>Help</b>: a guide to everything, with troubleshooting.</li>
-          <li>A <b>welcome tour</b> for first-time users (Settings → Show the welcome tour).</li>
+          <li><b>Go to</b>: tap the page number to jump to a page or a bar, or to a bookmark.</li>
+          <li><b>View</b>: Trim margins (bigger music), Dark pages, and a <b>Metronome</b> with a <b>tempo ladder</b> for loops.</li>
+          <li><b>Practice journal</b> (here, under Practice): your practice across days.</li>
+          <li><b>Share with your teacher</b>: the PDF with your markings, or a recording of your last session.</li>
+          <li><b>Backup</b> (Settings): everything in one file, and restore it on any iPad.</li>
         </ol>
       </details>
       <div class="actions footer-links">

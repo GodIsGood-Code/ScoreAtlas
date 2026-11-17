@@ -9,6 +9,9 @@ import { makeLesson, addSection, sectionsOf, Follower, FOLLOW_SETTINGS } from ".
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData, savePiece, loadPiece, loadMeta, putMeta } from "./store.js";
 import { Marks, INKS } from "./marks.js";
 import { LibraryUI } from "./library.js";
+import { Metronome, TempoLadder } from "./metronome.js";
+import { renderJournal } from "./journal.js";
+import { makeBackup, restoreBackup, shareFile, wavFile, markedPdf } from "./share.js";
 import { readScore, keepParts, withPageStarts, shiftPages, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
@@ -129,9 +132,45 @@ async function openPdf(data, name) {
 /* ---------- Drawing pages ---------- */
 // Display options (kept on this iPad): two pages side by side when the iPad is sideways, and half-page turns (the
 // top half of the next page shows while the bottom half of this one is still being played)
-const view = { twoUp: false, halfTurns: false, half: false };
+const view = { twoUp: false, halfTurns: false, half: false, crop: false, darkPages: false };
 try { Object.assign(view, JSON.parse(localStorage.getItem("pt-view") || "{}"), { half: false }); } catch {}
-const saveView = () => { try { localStorage.setItem("pt-view", JSON.stringify({ twoUp: view.twoUp, halfTurns: view.halfTurns })); } catch {} };
+const saveView = () => { try { localStorage.setItem("pt-view", JSON.stringify({ twoUp: view.twoUp, halfTurns: view.halfTurns, crop: view.crop, darkPages: view.darkPages })); } catch {} };
+const FULL = { x0: 0, y0: 0, x1: 1, y1: 1 };
+// Trimming margins: the part of each page with music on it (page fractions), found once from a small picture
+const cropCache = new Map();
+async function cropFor(n, page) {
+  const key = `${state.key}|${n}`;
+  if (cropCache.has(key)) return cropCache.get(key);
+  let box = FULL;
+  try {
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: 240 / base.width });
+    const c = document.createElement("canvas");
+    c.width = Math.round(vp.width);
+    c.height = Math.round(vp.height);
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    const W = c.width, H = c.height;
+    const rows = new Uint16Array(H), cols = new Uint16Array(W);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (data[(y * W + x) * 4] < 150) { rows[y]++; cols[x]++; }
+    // a row or column counts as music when it has a few dark dots (specks and scanner shadows at the edge don't)
+    const firstOf = (a, lo, hi, step) => { for (let i = lo; i !== hi; i += step) if (a[i] >= 2) return i; return -1; };
+    const m = 0.02; // ignore the outermost 2% (scanner edges)
+    const y0 = firstOf(rows, Math.floor(H * m), H, 1), y1 = firstOf(rows, Math.ceil(H * (1 - m)) - 1, -1, -1);
+    const x0 = firstOf(cols, Math.floor(W * m), W, 1), x1 = firstOf(cols, Math.ceil(W * (1 - m)) - 1, -1, -1);
+    if (y0 >= 0 && x0 >= 0 && y1 > y0 && x1 > x0) {
+      const pad = 0.015;
+      box = { x0: Math.max(0, x0 / W - pad), y0: Math.max(0, y0 / H - pad), x1: Math.min(1, (x1 + 1) / W + pad), y1: Math.min(1, (y1 + 1) / H + pad) };
+      if ((box.x1 - box.x0) * (box.y1 - box.y0) > 0.92) box = FULL; // hardly any margin: leave the page as it is
+    }
+    c.width = c.height = 0;
+  } catch {}
+  cropCache.set(key, box);
+  return box;
+}
 function isTwoUp() {
   const r = stand.getBoundingClientRect();
   return view.twoUp && state.count > 1 && r.width > r.height * 1.1;
@@ -141,7 +180,7 @@ const spreadStart = (n) => (n % 2 ? n : n - 1);
 
 function layoutKey() {
   const r = stand.getBoundingClientRect();
-  return `${Math.round(r.width)}x${Math.round(r.height)}@${window.devicePixelRatio || 1}${isTwoUp() ? "|2" : ""}`;
+  return `${Math.round(r.width)}x${Math.round(r.height)}@${window.devicePixelRatio || 1}${isTwoUp() ? "|2" : ""}${view.crop ? "|crop" : ""}`;
 }
 
 function render(n) {
@@ -152,18 +191,21 @@ function render(n) {
   const job = (async () => {
     const page = await pdf.getPage(n);
     const base = page.getViewport({ scale: 1 });
+    const crop = view.crop ? await cropFor(n, page) : FULL;
+    const bw = base.width * (crop.x1 - crop.x0), bh = base.height * (crop.y1 - crop.y0); // the part shown, in points
     const r = stand.getBoundingClientRect();
     const w = Math.max(80, two ? (r.width - 36) / 2 : r.width - 24), h = Math.max(80, r.height - 24);
-    const fit = Math.min(w / base.width, h / base.height);
+    const fit = Math.min(w / bw, h / bh);
     let scale = fit * Math.min(window.devicePixelRatio || 1, 3);
     const maxPixels = 16e6; // iPad Safari refuses canvases larger than about 16.7 million pixels
-    if (base.width * base.height * scale * scale > maxPixels) scale = Math.sqrt(maxPixels / (base.width * base.height));
-    const vp = page.getViewport({ scale });
+    if (bw * bh * scale * scale > maxPixels) scale = Math.sqrt(maxPixels / (bw * bh));
+    const vp = page.getViewport({ scale, offsetX: -crop.x0 * base.width * scale, offsetY: -crop.y0 * base.height * scale });
     const canvas = document.createElement("canvas");
-    canvas.width = Math.floor(vp.width);
-    canvas.height = Math.floor(vp.height);
-    canvas.style.width = `${Math.floor(base.width * fit)}px`;
-    canvas.style.height = `${Math.floor(base.height * fit)}px`;
+    canvas.crop = crop;
+    canvas.width = Math.floor(bw * scale);
+    canvas.height = Math.floor(bh * scale);
+    canvas.style.width = `${Math.floor(bw * fit)}px`;
+    canvas.style.height = `${Math.floor(bh * fit)}px`;
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", `Page ${n}`);
     const ctx = canvas.getContext("2d", { alpha: false });
@@ -189,8 +231,20 @@ function dropCache(shouldDrop) {
 // What is on screen: [{ page, canvas, unit, y0, y1 }] (the part of each page that shows, as fractions of its height)
 let shown = [];
 const showing = (page, y = 0.5) => shown.find((e) => e.page === page && y >= e.y0 - 1e-6 && y <= e.y1 + 1e-6) || null;
+const cropOf = (canvas) => (canvas && canvas.crop) || FULL;
+// a page fraction (across or down) as a fraction of what the canvas shows
+const shownX = (canvas, x) => { const k = cropOf(canvas); return (x - k.x0) / (k.x1 - k.x0); };
+const shownY = (canvas, y) => { const k = cropOf(canvas); return (y - k.y0) / (k.y1 - k.y0); };
 // the place on screen of a measure box, if that part of its page shows
-const entryFor = (box) => (box ? showing(box.page, (box.y0 + box.y1) / 2) : null);
+const entryFor = (box) => {
+  if (!box) return null;
+  for (const e of shown) {
+    if (e.page !== box.page) continue;
+    const y = shownY(e.canvas, (box.y0 + box.y1) / 2);
+    if (y >= e.y0 - 1e-6 && y <= e.y1 + 1e-6) return e;
+  }
+  return null;
+};
 
 // A page with its Pencil markings on top
 function pageUnit(n, canvas) {
@@ -200,7 +254,7 @@ function pageUnit(n, canvas) {
   unit.style.width = canvas.style.width;
   unit.style.height = canvas.style.height;
   unit.append(canvas);
-  const layer = marks.layer(n, parseFloat(canvas.style.width), parseFloat(canvas.style.height));
+  const layer = marks.layer(n, parseFloat(canvas.style.width), parseFloat(canvas.style.height), cropOf(canvas));
   if (layer) unit.append(layer);
   return unit;
 }
@@ -277,6 +331,7 @@ async function show(n, opts = {}) {
     shown = pages.map((p, i) => ({ page: p, canvas: canvases[i], unit: units[i], y0: 0, y1: 1 }));
   }
   sheet.classList.toggle("two-up", two);
+  sheet.classList.toggle("dark-pages", !!view.darkPages);
   drawOverlay();
   setStatus(null);
   // Keep the pages around ready so a turn is instant
@@ -422,6 +477,7 @@ async function startFollow() {
     if (loop) practice.setLoop(...playedRange(loop));
   }
   loopState = { endReached: false, quiet: 0, reps: 0, last: null };
+  ladder.seen = 0;
   startRecording();
   updateButtons();
   updateModebar();
@@ -525,6 +581,7 @@ function updateButtons() {
   $("teachDone").hidden = mode !== "teach";
   $("pieceTitle").textContent = state.pdf ? fileName.textContent : "ScoreAtlas";
   $("practiceNote").hidden = !!lastReport || !!lastRecording;
+  $("shareRecording").hidden = !lastRecording;
   scoreBtn.disabled = !state.pdf || mode !== "idle";
   applyBtn.disabled = mode !== "idle";
   const sec = scoreSectionOf();
@@ -636,7 +693,7 @@ function halfTurnCheck(box) {
   if (!view.halfTurns || view.half || isTwoUp() || mode !== "follow" || state.page >= state.count) return;
   const canvas = shown.length && shown[0].page === state.page ? shown[0].canvas : null;
   const split = canvas ? splitOf(state.page, canvas) : 0.5;
-  if (box.page === state.page && box.y0 >= split - 0.02) show(state.page, { half: true });
+  if (box.page === state.page && canvas && shownY(canvas, box.y0) >= split - 0.02) show(state.page, { half: true });
 }
 function halfTurnByTime() {
   if (!view.halfTurns || view.half || isTwoUp() || state.page >= state.count) return;
@@ -674,10 +731,11 @@ const playedRangeToMeasures = (l) => { const o = scoreSectionOf().order; return 
 // Places an element over a measure box on the page on screen
 function placeOnPage(el, box, canvas) {
   const r = canvas.getBoundingClientRect(), o = sheet.getBoundingClientRect();
-  el.style.left = `${r.left - o.left + box.x0 * r.width}px`;
-  el.style.top = `${r.top - o.top + box.y0 * r.height}px`;
-  el.style.width = `${(box.x1 - box.x0) * r.width}px`;
-  el.style.height = `${(box.y1 - box.y0) * r.height}px`;
+  const x0 = shownX(canvas, box.x0), x1 = shownX(canvas, box.x1), y0 = shownY(canvas, box.y0), y1 = shownY(canvas, box.y1);
+  el.style.left = `${r.left - o.left + x0 * r.width}px`;
+  el.style.top = `${r.top - o.top + y0 * r.height}px`;
+  el.style.width = `${(x1 - x0) * r.width}px`;
+  el.style.height = `${(y1 - y0) * r.height}px`;
 }
 
 // The loop's bars outlined, and while the report is open, each bar tinted by how often it was played
@@ -731,9 +789,10 @@ function pickLoopBar(x, y) {
   if (!sec || !sec.layout) return;
   let m = -1;
   for (const e of shown) {
-    const r = e.canvas.getBoundingClientRect();
-    const fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
-    if (fx < 0 || fx > 1 || fy < e.y0 || fy > e.y1) continue;
+    const r = e.canvas.getBoundingClientRect(), k = cropOf(e.canvas);
+    const sx = (x - r.left) / r.width, sy = (y - r.top) / r.height;
+    if (sx < 0 || sx > 1 || sy < e.y0 || sy > e.y1) continue;
+    const fx = k.x0 + sx * (k.x1 - k.x0), fy = k.y0 + sy * (k.y1 - k.y0); // on the whole page
     m = sec.layout.findIndex((b) => b && b.page === e.page && fx >= b.x0 && fx <= b.x1 && fy >= b.y0 && fy <= b.y1);
     if (m >= 0) break;
   }
@@ -772,7 +831,9 @@ function loopFrame(frame, sure) {
     if (page && !showing(page, box.y0)) { show(page); follower.pianistTurned(page); }
   }
   if (frame.index % FRAME_RATE === 0) {
-    const reps = practice.report({ refine: false }).loopReps;
+    const live = practice.report({ refine: false });
+    ladderCheck(live);
+    const reps = live.loopReps;
     loopState.reps = reps.length;
     loopState.last = reps.length ? reps[reps.length - 1].tempo : null;
   }
@@ -1540,6 +1601,217 @@ $("helpTour").addEventListener("click", showTour);
 // first launch (automated tests skip it)
 try { if (!localStorage.getItem("pt-welcomed") && !navigator.webdriver) setTimeout(showTour, 400); } catch {}
 
+/* ---------- Go to a page, a bar or a bookmark (tap the page number) ---------- */
+const gotoMenu = $("gotoMenu");
+let bookmarks = [];
+const bookmarksKey = () => `${state.key}|bookmarks`;
+async function openGoto() {
+  if (!state.pdf) return;
+  closePanels();
+  $("gotoPage").placeholder = `1–${state.count}`;
+  $("gotoPage").value = "";
+  $("gotoBar").value = "";
+  const sec = scoreSectionOf();
+  const bars = !!(sec && sec.layout);
+  $("gotoBarForm").hidden = !bars;
+  $("gotoBarNote").hidden = bars;
+  if (bars) { const info = barInfoOf(sec); $("gotoBar").placeholder = `${info[0] ? info[0].number : 1}–${info.length ? info[info.length - 1].number : ""}`; }
+  gotoMenu.hidden = false;
+  $("gotoPage").focus({ preventScroll: true });
+  bookmarks = ((await loadLesson(bookmarksKey())) || {}).list || [];
+  drawBookmarks();
+}
+function closeGoto() { gotoMenu.hidden = true; }
+pageNum.addEventListener("click", (e) => { e.stopPropagation(); gotoMenu.hidden ? openGoto() : closeGoto(); });
+pageNum.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openGoto(); } });
+document.addEventListener("pointerdown", (e) => { if (!gotoMenu.hidden && !gotoMenu.contains(e.target) && e.target !== pageNum) closeGoto(); });
+// going somewhere by hand is like turning there: the follower takes it as a hint
+function goToPage(n) {
+  n = Math.max(1, Math.min(state.count, n));
+  show(n);
+  if (mode === "follow" && follower) follower.pianistTurned(n);
+}
+$("gotoPageForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const n = parseInt($("gotoPage").value, 10);
+  if (!n) return;
+  closeGoto();
+  goToPage(n);
+  backToMusic();
+});
+$("gotoBarForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const want = $("gotoBar").value.trim();
+  const sec = scoreSectionOf();
+  if (!want || !sec) return;
+  const info = barInfoOf(sec);
+  let m = info.findIndex((b) => String(b.number) === want);
+  if (m < 0) m = info.findIndex((b) => parseInt(b.number, 10) >= parseInt(want, 10));
+  const box = m >= 0 && sec.layout[m];
+  if (!box) { toast(`Bar ${want} isn't in the sheet music`, 1800); return; }
+  closeGoto();
+  goToPage(box.page);
+  flashBar(m);
+  backToMusic();
+});
+function drawBookmarks() {
+  const ul = $("bookmarkList");
+  ul.textContent = "";
+  if (!bookmarks.length) { const li = document.createElement("li"); li.className = "note"; li.textContent = "No bookmarks yet."; ul.append(li); return; }
+  bookmarks.forEach((b, i) => {
+    const li = document.createElement("li");
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "btn small bm-go";
+    go.textContent = `${b.name} · p. ${b.page}`;
+    go.addEventListener("click", () => { closeGoto(); goToPage(b.page); backToMusic(); });
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn small icon flat";
+    del.setAttribute("aria-label", `Remove the bookmark ${b.name}`);
+    del.textContent = "✕";
+    del.addEventListener("click", async () => { bookmarks.splice(i, 1); await saveLesson(bookmarksKey(), { list: bookmarks }); drawBookmarks(); });
+    li.append(go, del);
+    ul.append(li);
+  });
+}
+$("addBookmark").addEventListener("click", async () => {
+  const name = window.prompt("Name this bookmark (for example Coda, or Second movement):", `Page ${state.page}`);
+  if (name === null) return;
+  bookmarks.push({ page: state.page, name: name.trim() || `Page ${state.page}` });
+  bookmarks.sort((a, b) => a.page - b.page);
+  await saveLesson(bookmarksKey(), { list: bookmarks }).catch(() => {});
+  drawBookmarks();
+});
+
+/* ---------- View: trimmed margins and dark pages ---------- */
+$("cropToggle").addEventListener("change", (e) => {
+  view.crop = e.target.checked;
+  saveView();
+  state.layout = layoutKey();
+  splits.clear();
+  show(state.page, { half: view.half });
+});
+$("darkPagesToggle").addEventListener("change", (e) => {
+  view.darkPages = e.target.checked;
+  saveView();
+  sheet.classList.toggle("dark-pages", view.darkPages);
+});
+$("viewBtn").addEventListener("click", () => {
+  $("cropToggle").checked = !!view.crop;
+  $("darkPagesToggle").checked = !!view.darkPages;
+});
+
+/* ---------- Metronome and the tempo ladder ---------- */
+const metroBar = $("metroBar"), beatDot = $("beatDot");
+const metro = new Metronome({
+  onBeat: (beat, accent) => {
+    beatDot.classList.add("on");
+    beatDot.classList.toggle("accent", accent);
+    setTimeout(() => beatDot.classList.remove("on"), 110);
+  },
+});
+const ladder = new TempoLadder();
+const ladderOn = () => !metroBar.hidden && $("ladderOn").checked && !!loop;
+function drawMetro() {
+  $("metroTempo").textContent = `♩ ${metro.bpm}`;
+  $("metroStart").textContent = metro.running ? "Stop" : "Start";
+  $("ladderWrap").hidden = !loop;
+  $("ladderOpts").hidden = !($("ladderOn").checked && loop);
+}
+$("openMetro").addEventListener("click", () => { closePanels(); metroBar.hidden = false; drawMetro(); });
+const nudge = (d) => { metro.setTempo(metro.bpm + d); if (ladderOn()) ladder.tempo = metro.bpm; drawMetro(); };
+$("metroSlower").addEventListener("click", () => nudge(-2));
+$("metroFaster").addEventListener("click", () => nudge(2));
+$("metroStart").addEventListener("click", () => { metro.running ? metro.stop() : metro.start(); drawMetro(); backToMusic(); });
+$("metroBeats").addEventListener("change", (e) => { metro.beats = Number(e.target.value); });
+$("metroSound").addEventListener("change", (e) => {
+  metro.sound = e.target.checked;
+  if (metro.sound && mode === "follow") toast("The click may confuse following a little; the flashing dot never does", 2600);
+});
+$("ladderOn").addEventListener("change", (e) => {
+  if (e.target.checked) {
+    ladder.start = metro.bpm;
+    ladder.step = Math.max(1, parseInt($("ladderStep").value, 10) || 4);
+    ladder.goal = Math.max(ladder.start, parseInt($("ladderGoal").value, 10) || 120);
+    ladder.reset(metro.bpm);
+    ladder.seen = practice ? practice.report({ refine: false }).loopReps.length : 0;
+    toast(`Tempo ladder: play the loop at ♩ ${ladder.tempo}; each clean time goes up by ${ladder.step}`, 3200);
+  }
+  drawMetro();
+});
+$("ladderStep").addEventListener("change", (e) => { ladder.step = Math.max(1, parseInt(e.target.value, 10) || 4); });
+$("ladderGoal").addEventListener("change", (e) => { ladder.goal = Math.max(30, parseInt(e.target.value, 10) || 120); });
+$("metroClose").addEventListener("click", () => { metro.stop(); metroBar.hidden = true; backToMusic(); });
+// after each repetition of the loop (called from loopFrame with the live report)
+function ladderCheck(r) {
+  if (!ladderOn()) return;
+  const hesitated = (rep) => r.bars.some((b) => b.t0 !== null && b.t0 >= rep.t0 - 0.05 && b.t0 < rep.t1 && b.hesitation);
+  const res = ladder.update(r.loopReps, hesitated);
+  if (res === "up") { metro.setTempo(ladder.tempo); drawMetro(); toast(`Clean! Next time: ♩ ${ladder.tempo}`, 2000); }
+  else if (res === "goal") { metro.setTempo(ladder.tempo); drawMetro(); toast(`Goal reached: ♩ ${ladder.tempo}. Well done!`, 3000); }
+  else if (res === "again") toast(`Once more at ♩ ${ladder.tempo}`, 1600);
+}
+
+/* ---------- Practice journal ---------- */
+$("journalBtn").addEventListener("click", async () => {
+  openPanel("journalPanel");
+  $("journalTitle").textContent = fileName.textContent;
+  const sec = scoreSectionOf();
+  const data = state.key ? await loadLesson(`${state.key}|practice`) : null;
+  renderJournal($("journalBody"), (data && data.sessions) || [], (m) => (sec ? barName(sec, m) : String(m + 1)));
+});
+makeMovable($("journalPanel"), $("journalPanel").querySelector(".panel-head"), "pt-journal-place");
+
+/* ---------- Backup and restore ---------- */
+$("backupSave").addEventListener("click", async () => {
+  try {
+    setStatus("Making a backup…");
+    const { bytes, pieces } = await makeBackup();
+    setStatus(null);
+    const day = new Date().toISOString().slice(0, 10);
+    const how = await shareFile(bytes, `ScoreAtlas backup ${day}.scoreatlas`, "application/zip");
+    if (how !== "cancelled") toast(`Backup of ${plural(pieces, "piece")} ${how === "shared" ? "ready" : "saved to Downloads"}`, 2600);
+  } catch (err) {
+    setStatus(null);
+    toast(`Couldn't make the backup: ${err.message || err}`, 3000);
+  }
+});
+$("backupRestore").addEventListener("click", () => $("restoreInput").click());
+$("restoreInput").addEventListener("change", async () => {
+  const file = $("restoreInput").files && $("restoreInput").files[0];
+  $("restoreInput").value = "";
+  if (!file) return;
+  try {
+    setStatus("Restoring…");
+    const { pieces } = await restoreBackup(new Uint8Array(await file.arrayBuffer()));
+    setStatus(null);
+    toast(`Restored ${plural(pieces, "piece")}. Reloading…`, 2000);
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) {
+    setStatus(null);
+    toast(err.message || "Couldn't restore that file.", 3200);
+  }
+});
+
+/* ---------- Share with a teacher ---------- */
+$("shareMarked").addEventListener("click", async () => {
+  if (!state.pdf) return;
+  try {
+    const bytes = await markedPdf(state.pdf, (ctx, n, w, h) => marks.drawPageInto(ctx, n, w, h), (n, t) => setStatus(`Making the PDF: page ${n} of ${t}…`));
+    setStatus(null);
+    await shareFile(bytes, `${fileName.textContent} (with markings).pdf`, "application/pdf");
+  } catch (err) {
+    setStatus(null);
+    toast(`Couldn't make the PDF: ${err.message || err}`, 3000);
+  }
+});
+$("shareRecording").addEventListener("click", async () => {
+  if (!lastRecording) return;
+  const day = new Date().toISOString().slice(0, 10);
+  await shareFile(wavFile(lastRecording.samples, lastRecording.rate), `${fileName.textContent} practice ${day}.wav`, "audio/wav");
+});
+
 /* ---------- Offline: the app keeps itself on the iPad (see sw.js) ---------- */
 if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
   navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(async () => {
@@ -1683,7 +1955,8 @@ $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
 $("libraryBtn").addEventListener("click", () => { closePanels("library"); library.open(); });
 // Only one panel at a time (and the View menu closes too)
 function closePanels(except) {
-  for (const id of ["settingsPanel", "helpPanel"]) if (except !== id) $(id).hidden = true;
+  for (const id of ["settingsPanel", "helpPanel", "journalPanel"]) if (except !== id) $(id).hidden = true;
+  if ($("gotoMenu")) $("gotoMenu").hidden = true;
   if (except !== "card" && !card.hidden) { card.hidden = true; helpBtn.setAttribute("aria-expanded", "false"); }
   if (except !== "report" && !reportPanel.hidden) { reportPanel.hidden = true; drawOverlay(); }
   if (except !== "library" && library.isOpen) library.close();
@@ -1695,6 +1968,8 @@ window.addEventListener("keydown", (e) => {
   else if (!$("tour").hidden) endTour();
   else if (!$("settingsPanel").hidden) $("settingsPanel").hidden = true;
   else if (!$("helpPanel").hidden) $("helpPanel").hidden = true;
+  else if (!$("journalPanel").hidden) $("journalPanel").hidden = true;
+  else if (!$("gotoMenu").hidden) $("gotoMenu").hidden = true;
   else if (library.isOpen) library.close();
   else if (!reportPanel.hidden) setReport(false);
   else if (marks.markMode) setMarkMode(false);

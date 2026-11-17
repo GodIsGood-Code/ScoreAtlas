@@ -3,7 +3,7 @@
 // at once); offline, or when the network is slow, the kept copy is used. The big PDF reader files are kept as they are.
 const CACHE = "page-turner-v1";
 const FILES = [
-  "./", "index.html", "styles.css", "app.js", "listen.js", "store.js", "marks.js", "library.js",
+  "./", "index.html", "styles.css", "app.js", "listen.js", "store.js", "marks.js", "library.js", "share.js", "journal.js", "metronome.js",
   "audio/capture-worklet.js",
   "engine/features.js", "engine/fft.js", "engine/follower.js", "engine/hearing.js", "engine/layout.js", "engine/marker.js",
   "engine/practice.js", "engine/recorder.js", "engine/score.js", "engine/scorelesson.js", "engine/search.js",

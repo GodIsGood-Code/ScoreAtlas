@@ -393,3 +393,33 @@ a.btn { text-decoration: none; }
 .tour-dots i.on { width: 22px; border-radius: 4px; background: var(--brass); }
 .tour-nav { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .tour-move { display: flex; gap: 8px; margin-left: auto; }
+
+/* ---------- Go to, metronome, journal ---------- */
+.counter { position: relative; }
+#pageNum { cursor: pointer; border-radius: 8px; padding: 6px 4px; }
+#pageNum:hover { background: var(--surface); }
+#pageNum:focus-visible { outline: 2px solid var(--brass); }
+.goto-menu {
+  position: absolute; z-index: 20; left: 50%; top: calc(100% + 8px); transform: translateX(-50%); width: 280px;
+  display: grid; gap: 10px; padding: 16px; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--panel-shadow);
+}
+.goto-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; margin: 0; font-weight: 700; font-size: 15px; }
+.goto-row input, .ladder-opts input { font: inherit; font-size: 16px; color: var(--ink); background: var(--well); border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; min-width: 0; }
+.bookmarks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 200px; overflow: auto; }
+.bookmarks li { display: flex; align-items: center; gap: 6px; }
+.bookmarks .bm-go { flex: 1; justify-content: flex-start; }
+.bookmarks .note { padding: 2px 0; }
+.metrobar { top: auto; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: max-content; }
+.beat-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--well-dark); flex: none; transition: background .06s; }
+.beat-dot.on { background: var(--brass); }
+.beat-dot.on.accent { background: var(--rec); }
+.metro-tempo { min-width: 64px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 16px; }
+.metrobar select { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; }
+.mini-check { display: flex; gap: 6px; align-items: center; font-size: 14px; font-weight: 700; }
+.mini-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--brass); }
+.ladder-opts { display: flex; gap: 6px; align-items: center; font-size: 14px; font-weight: 700; }
+.ladder-opts input { width: 56px; }
+.tempo-chart .day-bar { fill: var(--chart-line); }
+.journal-sessions li { font-size: 14px; }
+.sheet.dark-pages .page { filter: invert(.92) hue-rotate(180deg); }

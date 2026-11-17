@@ -45,8 +45,10 @@ export class Marks {
   }
 
   // A transparent canvas the size of the page, with this page's markings
-  layer(page, w, h) {
+  // crop: the part of the page showing ({ x0, y0, x1, y1 } as page fractions; the whole page if not given)
+  layer(page, w, h, crop) {
     const c = document.createElement("canvas");
+    c.crop = crop || { x0: 0, y0: 0, x1: 1, y1: 1 };
     c.className = "marks";
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     c.width = Math.round(w * dpr);
@@ -62,9 +64,23 @@ export class Marks {
   draw(page) {
     const c = this.layers.get(page);
     if (!c) return;
-    const ctx = c.getContext("2d");
-    ctx.clearRect(0, 0, c.width, c.height);
-    for (const s of this.pages[page] || []) this.paint(ctx, s, c.width, c.height);
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);
+    for (const s of this.pages[page] || []) this.paintOn(c, s);
+  }
+
+  // paint a stroke on a layer, through the layer's crop
+  paintOn(c, s) {
+    const k = c.crop, ctx = c.getContext("2d");
+    const W = c.width / (k.x1 - k.x0), H = c.height / (k.y1 - k.y0);
+    ctx.save();
+    ctx.translate(-k.x0 * W, -k.y0 * H);
+    this.paint(ctx, s, W, H);
+    ctx.restore();
+  }
+
+  // a page's markings drawn onto any canvas of the whole page (for exporting)
+  drawPageInto(ctx, page, W, H) {
+    for (const s of this.pages[page] || []) this.paint(ctx, s, W, H);
   }
 
   paint(ctx, s, W, H) {
@@ -119,19 +135,21 @@ export class Marks {
       if (!c || !c.isConnected) return;
       swallow(e);
       if (pen) this.lastPen = performance.now();
-      const r = c.getBoundingClientRect();
-      const at = (ev) => [(ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, ev.pressure > 0 && ev.pointerType === "pen" ? ev.pressure : 0.5];
+      const r = c.getBoundingClientRect(), k = c.crop;
+      // where on the page (fractions of the whole page, whatever part of it shows)
+      const at = (ev) => [k.x0 + ((ev.clientX - r.left) / r.width) * (k.x1 - k.x0), k.y0 + ((ev.clientY - r.top) / r.height) * (k.y1 - k.y0), ev.pressure > 0 && ev.pointerType === "pen" ? ev.pressure : 0.5];
+      const scale = { x: r.width / (k.x1 - k.x0), y: r.height / (k.y1 - k.y0) }; // screen pixels per page fraction
       const [x, y, p] = at(e);
       if (this.tool.kind === "finger") {
         this.add(page, { t: "text", s: this.digit, x, y, c: INKS.blue });
         return;
       }
       try { root.setPointerCapture(e.pointerId); } catch {}
-      this.active = { id: e.pointerId, page, c, r, at, erased: [] };
+      this.active = { id: e.pointerId, page, c, r: scale, at, erased: [] };
       if (this.tool.kind === "erase") { this.eraseAt(this.active, x, y); return; }
       const hl = this.tool.kind === "highlight";
       this.active.stroke = hl ? { t: "hl", w: 0.018, p: [x, y, p] } : { t: "pen", c: this.tool.color, w: 0.0022, p: [x, y, p] };
-      this.paint(c.getContext("2d"), this.active.stroke, c.width, c.height);
+      this.paintOn(c, this.active.stroke);
     }, true);
     root.addEventListener("pointermove", (e) => {
       const a = this.active;
@@ -143,10 +161,10 @@ export class Marks {
         const [x, y, p] = a.at(ev);
         if (this.tool.kind === "erase") { this.eraseAt(a, x, y); continue; }
         const s = a.stroke, n = s.p.length;
-        const dx = (x - s.p[n - 3]) * a.r.width, dy = (y - s.p[n - 2]) * a.r.height;
+        const dx = (x - s.p[n - 3]) * a.r.x, dy = (y - s.p[n - 2]) * a.r.y;
         if (dx * dx + dy * dy < 1.5) continue;
         s.p.push(x, y, p);
-        if (s.t === "pen") this.paint(a.c.getContext("2d"), { ...s, p: s.p.slice(-6) }, a.c.width, a.c.height);
+        if (s.t === "pen") this.paintOn(a.c, { ...s, p: s.p.slice(-6) });
       }
       if (a.stroke && a.stroke.t === "hl") this.drawWith(a.page, a.stroke);
     }, true);
@@ -170,7 +188,7 @@ export class Marks {
   drawWith(page, stroke) {
     this.draw(page);
     const c = this.layers.get(page);
-    if (c) this.paint(c.getContext("2d"), stroke, c.width, c.height);
+    if (c) this.paintOn(c, stroke);
   }
 
   add(page, stroke) {
@@ -184,8 +202,8 @@ export class Marks {
     const list = this.pages[a.page] || [];
     const rad = 10; // pixels on screen
     const near = (s) => {
-      if (s.t === "text") return Math.hypot((s.x - x) * a.r.width, (s.y - y) * a.r.height) < rad + 8;
-      for (let i = 0; i < s.p.length; i += 3) if (Math.hypot((s.p[i] - x) * a.r.width, (s.p[i + 1] - y) * a.r.height) < rad + (s.t === "hl" ? 8 : 2)) return true;
+      if (s.t === "text") return Math.hypot((s.x - x) * a.r.x, (s.y - y) * a.r.y) < rad + 8;
+      for (let i = 0; i < s.p.length; i += 3) if (Math.hypot((s.p[i] - x) * a.r.x, (s.p[i + 1] - y) * a.r.y) < rad + (s.t === "hl" ? 8 : 2)) return true;
       return false;
     };
     const keep = [];

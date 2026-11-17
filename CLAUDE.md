@@ -7,11 +7,23 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
-- **Test 13 (current):** release groundwork. `release/` holds the App Store listing (`app-store.md`: name, subtitle,
+- **Test 14:** features the owner picked (1, 3–7 of the suggestions): **backup and restore** (`share.js`:
+  `makeBackup` zips both IndexedDB stores (typed arrays as binary entries) plus settings into a `.scoreatlas` file;
+  `restoreBackup` puts them back, merging setlists; Settings → Backup), **practice journal** (`journal.js`: minutes a
+  day for two weeks, bars getting faster, still-tricky bars, recent sessions; Piece → Practice journal), **metronome
+  and tempo ladder** (`metronome.js`: visible beat, optional click (the mic hears it); with a loop, each clean
+  repetition at ≥ 93% of the ladder tempo steps it up toward a goal; View → Metronome), **go to** a page, a bar
+  (with sheet music) or a bookmark (`<key>|bookmarks`; tap the page number), **trim margins** (ink bounds per page
+  from a small render, PDF.js viewport offset; `canvas.crop`; boxes and markings go through `shownX/shownY` and the
+  markings layer's crop) and **dark pages** (CSS invert on `.page`), **share with a teacher** (a PDF with markings
+  drawn in, built by `buildPdf` from JPEG pages; the last recording as WAV; through the share sheet or a download).
+  `tests/extras.cjs` and `tests/extras-unit.js`. The owner's name and email are on the privacy/support pages at
+  their request.
+- **Test 13:** release groundwork. `release/` holds the App Store listing (`app-store.md`: name, subtitle,
   description, promotional text, keywords, category, age rating, microphone permission text, App Privacy answers
   "Data Not Collected", reviewer notes, screenshot plan; lengths checked) and a release checklist (`release/README.md`).
   `privacy.html` and `support.html` (styled by `doc.css`) are the policy and support URLs on the live site; contact
-  is the GitHub issues page (no personal email published). The app will launch free (owner). In the app: **Settings**
+  is the owner's name and email, which the owner asked to publish (Ethan Chen, heart.of.Eitanium@gmail.com), plus the GitHub issues page. The app will launch free (owner). In the app: **Settings**
   (View menu or the Piece panel): turn pages earlier/later (`turnShift`, −1 to +1 s, applied through
   `followSettings()` to `anticipation`/`scoreLead` at the next Follow), bar highlight, tap/swipe to turn, keep the
   screen on, appearance Automatic/Light/Dark (`data-theme` on `<html>`, dark tokens also under
