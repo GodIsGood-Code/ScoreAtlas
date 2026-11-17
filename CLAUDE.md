@@ -7,6 +7,22 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
+- **Test 15:** the owner's Test 13/14 feedback ("really like all the features", UI good; followed well on
+  run-throughs but had trouble finding them in practice: even after flipping to the page, it skipped to a section that
+  was only similar), plus **wrong-note detection** (roadmap step 14). US spelling everywhere ("Practice", the owner
+  lives in the U.S.). **Pen sizes** in Mark (thin, medium, thick: `marks.size` scales pen, highlighter and fingering
+  numbers). **Page anchor** (follower): the page the pianist turned to holds for 30 s (`anchorTime`, renewed while
+  they play on over natural turns); a lookup or the periodic check may leave it only with a strong match at most 0.6x
+  the cost of the best place on that page or the pages beside it (`anchorRatio`, `anchorBest`, `leavesAnchor`;
+  otherwise a lookup takes the anchor's best place if it is good, or waits); score sections' `alikeMargin` 0.03. On
+  their recording with flips simulated at each restart: right page 86% → 93% (without flips 76% → 83%); synthetic
+  suites unchanged. **Check my notes** (practice report, with sheet music): `pitch.js` runs Spotify's Basic Pitch
+  (`vendor/basic-pitch/`, Apache-2.0, patched to free its tensors) on TensorFlow.js 3.21.0 (`vendor/tfjs/`, WebGL,
+  else CPU), loaded on first use, over the session's recording (the stretches played with sheet music, the last 12
+  minutes) in 30 s pieces; `engine/notecheck.js` compares the notes heard with the written ones timed from the
+  report's bar entry times (see Code). Results in the report (worst bars, "missed E5 · played F5 for E5") and red
+  badges on those bars while it's open; `pageTurner.notecheck`. `tools/basic_pitch_node.mjs` runs the same model in
+  Node; `tests/notecheck-eval.js` scores it on the synthetic `mistakes` performance.
 - **Test 14:** features the owner picked (1, 3–7 of the suggestions): **backup and restore** (`share.js`:
   `makeBackup` zips both IndexedDB stores (typed arrays as binary entries) plus settings into a `.scoreatlas` file;
   `restoreBackup` puts them back, merging setlists; Settings → Backup), **practice journal** (`journal.js`: minutes a
@@ -77,7 +93,7 @@ language; the owner tests on their iPad and reports back.
   agreeing checks) — lost 0.5 s there now; a copy on the page showing (or the next) wins within 1.3x of the best
   (`pageAmbiguity`); the report panel and the steps card can be dragged by their title (place kept).
 - **Test 9:** practice tools (roadmap steps 6–8) plus fixes from the owner's Test 8 run. Practice: Follow
-  with sheet music keeps a `PracticeLog`; Stop opens a practice report (bars practised most, where they hesitated:
+  with sheet music keeps a `PracticeLog`; Stop opens a practice report (bars practiced most, where they hesitated:
   slowed down, paused, or stopped and went back; tempo bar by bar for the longest run as a graph with a tap tooltip
   and a table; bars on the page tinted by how often they were played); a summary of each session is kept on the iPad
   (`<piece key>|practice` in the lessons store, last 50). Loop: the Loop button, then tap the first and last bar;
@@ -90,7 +106,7 @@ language; the owner tests on their iPad and reports back.
   piano parts ticked by default (`suggestParts`: named piano or 2+ staves, if they hold half the notes) and tiny
   misread parts grouped as one line, with note counts; sheet-music turns 0.5 s earlier (`scoreLead`) and the turn
   lead scaled by the pianist's pace (`pace()`); layout works on crooked phone scans (barlines may drift 2 px between
-  staves, two-pixel-wide grey barlines, the staff's real top and bottom line found at each column, outer lines at
+  staves, two-pixel-wide gray barlines, the staff's real top and bottom line found at each column, outer lines at
   their real positions, title text no longer taken for a staff) — all 10 pages exact now, was about half; practice:
   when copies of the music exist only on far pages, the earliest is picked instead of none, picks stay with the
   copy already chosen, and lookups agreeing for 1.2 s (`farAgree`) move to another page without a flip.
@@ -100,7 +116,7 @@ language; the owner tests on their iPad and reports back.
   pretty decent", but with passages that recur through the piece it jumped to other copies; turns sometimes came late
   enough that they had to pause; the highlight lagged and jumped back and forth; they couldn't try practice moves
   because the run-through had trouble. Fixes: common-sense rules (while the tracker matches well it never jumps; a
-  lookup that lands on another page needs a strong match, or a page flip, or a just-after-pause neighbour page; after a
+  lookup that lands on another page needs a strong match, or a page flip, or a just-after-pause neighbor page; after a
   pause or when lost, prefer the copy right ahead of where they were), sheet-music turns a full beat early, a quiet
   1.5 s lead-in so bar 1 isn't lost to the room-noise warm-up, page turns wait while the tracking races ahead of the
   pianist's pace (`racing`), and a smoothed highlight (`engine/marker.js`). Features: **bar numbers per page** (sheet
@@ -245,6 +261,19 @@ Steps are numbered across phases, in order. Work through them in that order unle
     file's systems don't fit): only the page's measure count is known; staves of a size, systems by gaps, and each
     system's count chosen by dynamic programming over barline clarity plus a share-by-width prior.
   - `hearing.js`: the "Hearing" note display.
+  - `notecheck.js`: wrong-note detection. `expectedNotes(bars, measures)` times the written notes from the bar entry
+    times; `checkNotes(expected, heard)`: written and heard chords lined up by dynamic programming (`alignTimes`, so
+    rubato inside a bar doesn't count as missing), then a written note is fine if heard at its pitch within 0.15 s (or
+    10% of the bar), an octave off, as a quick repeat (within 0.3 s) of the same note still sounding, or in the notes
+    heard less strictly (`soft`, onset 0.25) within 0.08 s when not an overtone of a louder note below nor spill-over
+    from a note a semitone or two away (which would hide a wrong note); "wrong" when
+    a loud note (model amplitude ≥ 0.35) within 4 semitones was heard instead that isn't written nearby, an overtone
+    or an echo; bars with over 60% missing are left out ("unsure", timing rather than playing); notes below C2 are
+    not checked. `PITCH_SETTINGS` (the model's thresholds: onset 0.4, frame 0.3; soft 0.25/0.25) are shared with
+    `pitch.js` and the Node tool. The model hears nearly every note played, but adds overtones and echoes, and misses
+    very soft notes. `pitch.js` pads each 32 s piece with silence on WebGL: TensorFlow.js fails to build a shader
+    ("getT1: no matching overloaded function") for some lengths (26–27 s in headless Chromium); it tries 32, 33, 34 s,
+    then the CPU.
 - `audio/capture-worklet.js` (audio thread) → `listen.js` (`Microphone`) → `FeatureExtractor`.
 - `store.js`: IndexedDB on the device: lessons keyed by PDF fingerprint plus page count (also `<key>|marks`,
   `<key>|practice`), the last opened PDF, the library and setlists.
@@ -277,6 +306,17 @@ Steps are numbered across phases, in order. Work through them in that order unle
     practice sessions with sections). Currently all pass (14/14 found, 10/10 turns).
   - `node tests/recorder-unit.js`: the recorder (length, clock, a 440 Hz tone kept, the limit).
   - `node tests/practice-unit.js`: practice insights from made-up sessions (plays, hesitations, tempo, loop).
+  - `node tests/notecheck-unit.js`: the note check on made-up notes (dropped, wrong, octave, rubato, soft notes,
+    overtones, spill-over beside a wrong note, unheard bars, merged repeats).
+  - Wrong-note detection: `npm install @tensorflow/tfjs@3.21.0` somewhere outside the repository, then
+    `NODE_PATH=THERE/node_modules node tools/basic_pitch_node.mjs tests/output/perf/mistakes.wav --raw` (about 2x
+    real time; `--raw` keeps the model's output so `--from-raw --onset X --frame Y` tries other thresholds in seconds),
+    then `node tests/notecheck-eval.js mistakes [--follow] [--list] [--no-soft]` (truth from the performance's own
+    notes; `--follow` takes bar times from following, as the app does). Currently 90% of the 29 mistakes found (89%
+    following), 0–0.3% of correct notes flagged; `ref` 0%, `voicing` (soft accompaniment) 3.6%. On the owner's
+    Encourage One Another (first 70 s of a run-through, 442 notes): 24 missed and 2 wrong flagged (was 54 before the
+    chord alignment and soft notes), some probably repeated notes not restruck and notes the OMR misread (an F♯5 in
+    bars 25–27 never heard anywhere).
   - `node tests/real-eval.js SCORE.mxl RECORDING.wav --parts 12 --end 139`: a real recording (convert a Voice Memo
     with ffmpeg to 22.05 kHz mono WAV) that begins with a run-through: truth by offline alignment, the run-through's
     turns (seconds before each new page's first bar), position error and highlight, then practice sessions cut from it

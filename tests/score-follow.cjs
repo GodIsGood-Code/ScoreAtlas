@@ -94,6 +94,18 @@ const PERF = path.join(__dirname, 'output/perf');
   check('jumping to 50 s in the replay shows page 2 (section B)', (await page.inputValue('#rpSeek').then(Number)) >= 50 && (await page.evaluate(() => window.pageTurner.page)) === 2, `page ${await page.evaluate(() => window.pageTurner.page)}`);
   await page.click('#rpClose');
   check('Done ends the replay', (await page.evaluate(() => window.pageTurner.mode)) === 'idle' && (await page.isHidden('#replayBar')));
+  // Check my notes: the note-recognition model listens to the recording (the performance has no mistakes)
+  check('the report offers checking the notes', await page.isVisible('#checkNotesBtn'));
+  const n0 = Date.now();
+  await page.evaluate(() => { window.pageTurner.noteCheckLimit = 40; }); // the last 40 s (headless Chromium has no WebGL for it: slow)
+  await page.click('#checkNotesBtn');
+  await page.waitForFunction(() => window.pageTurner.notecheck, null, { timeout: 600000, polling: 500 }).catch(() => {});
+  const nc = await page.evaluate(() => window.pageTurner.notecheck);
+  const ncText = (await page.textContent('#reportBody').catch(() => '')) || '';
+  check('checking the notes finds almost all of them played', nc && nc.checked > 60 && nc.missed + nc.wrong <= nc.checked * 0.05,
+    nc ? `${nc.checked} checked, ${nc.missed} missed, ${nc.wrong} wrong; took ${((Date.now() - n0) / 1000).toFixed(0)} s` : 'no result');
+  check('the report shows the notes summary', /notes? checked/.test(ncText), (ncText.match(/[0-9]+ notes? checked[^.]*/) || [''])[0]);
+  await page.screenshot({ path: path.join(__dirname, 'output/notecheck.png') });
   await page.click('#reportClose');
   // Loop: tap Loop, then the first and the third bar on the page
   await page.click('#loopBtn');

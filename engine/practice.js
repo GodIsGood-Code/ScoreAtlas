@@ -208,7 +208,7 @@ export class PracticeLog {
         }
       });
       // stopped and went back: the next run starts at or before the bar this one stopped in (not at the end of the
-      // piece, and not at the end of the loop being practised)
+      // piece, and not at the end of the loop being practiced)
       const next = runs[ri + 1];
       if (next && r.endBar < lastBar && next.startBar <= r.endBar && !(Lp && r.endBar === Lp.to)) r.bars[r.bars.length - 1].hesitation = "went back";
       for (const b of r.bars) if (b.hesitation) bump(hes, b.measure);
@@ -241,7 +241,7 @@ export class PracticeLog {
   }
 }
 
-// Groups of neighbouring measures played about equally often (at least twice): [{ from, to, count }] (measure
+// Groups of neighboring measures played about equally often (at least twice): [{ from, to, count }] (measure
 // indices), most first
 export function busiestPassages(plays, measureCount, top = 3) {
   const out = [];

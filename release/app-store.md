@@ -30,7 +30,7 @@ Put your iPad on the music stand, open a piece and tap Follow. As you play, Scor
 
 FOLLOWS YOUR PLAYING, NOT A METRONOME
 • Speed up, slow down, pause, take a breath: ScoreAtlas keeps up.
-• Practise the way you really practise: start anywhere, repeat a passage, go back a few bars, skip ahead. It finds you again in about a second.
+• Practice the way you really practice: start anywhere, repeat a passage, go back a few bars, skip ahead. It finds you again in about a second.
 • Repeats, first and second endings, D.C., D.S., coda and Fine are followed in the order you play them.
 • Playing something that isn't in the piece, like warming up, doesn't move the page.
 
@@ -39,9 +39,10 @@ TWO WAYS TO LEARN A PIECE
 • Or teach it: play the piece once (or just a section) while turning pages yourself, and ScoreAtlas remembers where to turn.
 
 PRACTICE TOOLS
-• Practice report: after a session, see which bars you practised most, where you hesitated, and your tempo bar by bar.
+• Practice report: after a session, see which bars you practiced most, where you hesitated, and your tempo bar by bar.
 • Loop a passage: tap the first and last bar, and ScoreAtlas counts each repetition and shows its tempo.
 • Listen back: hear your session again with the highlight and pages following along.
+• Check my notes: ScoreAtlas listens to your session for missed and wrong notes and marks those bars on the music.
 
 EVERYTHING A MUSIC STAND NEEDS
 • Library: every PDF you open is kept, with a picture of its first page. Scans and phone photos of music work.
@@ -74,8 +75,9 @@ ScoreAtlas listens to your playing so it can follow along in the music and turn 
 
 - Do you or your third-party partners collect data from this app? **No.** Result shown on the store: **Data Not Collected.**
 - Why that's accurate: the app has no account, no analytics, no ads and no server. Sheet music, lessons, markings,
-  practice history and recordings are stored only on the iPad (in the app's own storage). Microphone sound is analysed
-  on the device and only kept in memory for "Listen back" until the next session.
+  practice history and recordings are stored only on the iPad (in the app's own storage). Microphone sound is analyzed
+  on the device and only kept in memory for "Listen back" and "Check my notes" until the next session (the note
+  recognition model is part of the app and runs on the iPad).
 
 ## Notes for Apple's reviewer (App Review Information)
 

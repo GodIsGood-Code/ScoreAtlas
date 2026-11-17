@@ -1,5 +1,5 @@
 // A metronome: a visible beat, and a click if wanted (the click is soft and short, but the microphone hears it, so it
-// may confuse following a little; the visible beat never does). Used on its own, and for the tempo ladder: practise a
+// may confuse following a little; the visible beat never does). Used on its own, and for the tempo ladder: practice a
 // loop slower, and the tempo steps up after each clean repetition.
 
 export class Metronome {

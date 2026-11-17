@@ -102,6 +102,15 @@ const ORIGIN = 'http://localhost:8765';
   check('drawing doesn\'t turn the page', (await num()) === before);
   await page.click('#markUndo');
   check('Undo takes the last mark away', (await strokes()) === 1);
+  // a thick pen
+  await page.click('[data-size="1.8"]');
+  await page.click('[data-tool="pen"][data-color="red"]');
+  await page.mouse.move(unit.x + unit.w * 0.3, unit.y + unit.h * 0.4); await page.mouse.down();
+  await page.mouse.move(unit.x + unit.w * 0.5, unit.y + unit.h * 0.45, { steps: 5 }); await page.mouse.up();
+  const thick = await pt(() => { const all = Object.values(window.pageTurner.marks().pages).flat(); return all[all.length - 1]; });
+  check('the pen size can be changed (thick)', thick && thick.t === 'pen' && Math.abs(thick.w - 0.0022 * 1.8) < 1e-6, thick && `w ${thick.w}`);
+  await page.click('#markUndo');
+  await page.click('[data-size="1"]');
   await page.click('[data-tool="finger"]');
   await page.click('#digitRow >> text=3');
   await page.mouse.click(unit.x + unit.w * 0.5, unit.y + unit.h * 0.2);

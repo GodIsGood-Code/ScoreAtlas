@@ -39,7 +39,7 @@
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 14</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 15</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -99,6 +99,11 @@
           <button class="btn small" type="button" data-tool="highlight">Highlight</button>
           <button class="btn small" type="button" data-tool="finger">1–5</button>
           <button class="btn small" type="button" data-tool="erase">Eraser</button>
+        </span>
+        <span class="tool-group size-row" id="sizeRow" role="group" aria-label="Stroke size">
+          <button class="btn small size" type="button" data-size="0.6" aria-label="Thin"><i style="width:4px;height:4px"></i></button>
+          <button class="btn small size" type="button" data-size="1" aria-label="Medium" aria-pressed="true"><i style="width:8px;height:8px"></i></button>
+          <button class="btn small size" type="button" data-size="1.8" aria-label="Thick"><i style="width:13px;height:13px"></i></button>
         </span>
         <span class="digit-row" id="digitRow" hidden><button class="btn small" type="button" aria-pressed="true">1</button><button class="btn small" type="button">2</button><button class="btn small" type="button">3</button><button class="btn small" type="button">4</button><button class="btn small" type="button">5</button></span>
         <span class="tool-group">
@@ -229,18 +234,19 @@
       <details><summary>Teaching a piece</summary>
         <p><b>Piece → Teach</b>, then play the piece (or any section) while turning pages yourself with the pedal or a tap. Tap <b>Done</b> at the top when finished. Teach more sections any time; they add up. <b>Forget</b> clears what a piece learned.</p>
       </details>
-      <details><summary>Following and practising</summary>
+      <details><summary>Following and practicing</summary>
         <ul>
           <li>Start anywhere, stop, repeat, go back or skip ahead: ScoreAtlas finds you again. After skipping, turn to that page yourself and it finds you within a second.</li>
           <li><b>Loop</b>: tap Loop, then the first and the last bar. Each repetition is counted with its tempo.</li>
-          <li>Tap <b>Stop</b> for the <b>practice report</b>: bars you practised most, where you hesitated, your tempo bar by bar. <b>Listen back</b> plays your session with the pages following.</li>
+          <li>Tap <b>Stop</b> for the <b>practice report</b>: bars you practiced most, where you hesitated, your tempo bar by bar. <b>Listen back</b> plays your session with the pages following.</li>
+          <li><b>Check my notes</b> (in the report, with sheet music): listens to the session for missed and wrong notes and marks those bars in red. It takes a little while and works without Wi-Fi.</li>
         </ul>
       </details>
       <details><summary>Library and setlists</summary>
         <p>Every PDF you open is kept in the Library. In <b>Setlists</b>, make a list, add pieces in order and tap <b>Play</b>: at the end of a piece, the forward pedal opens the next one, and Follow carries on.</p>
       </details>
       <details><summary>Apple Pencil</summary>
-        <p>Tap <b>Mark</b> first (so nothing is marked by accident), then write with the Pencil or a finger: pens in three colours, highlighter, fingering numbers 1–5, eraser and undo. Tap <b>Done</b> when finished. Markings stay with the piece.</p>
+        <p>Tap <b>Mark</b> first (so nothing is marked by accident), then write with the Pencil or a finger: pens in three colors, highlighter, fingering numbers 1–5, eraser and undo. Tap <b>Done</b> when finished. Markings stay with the piece.</p>
       </details>
       <details><summary>View, pedal and performing</summary>
         <ul>
@@ -257,6 +263,7 @@
           <li><b>The microphone is off:</b> in Safari, tap <b>aA → Website Settings → Microphone → Allow</b>, then reload. <b>Piece → Check microphone</b> shows the notes it hears.</li>
           <li><b>Turns feel late or early:</b> <b>Settings → Turn pages</b>.</li>
           <li><b>It loses you in a passage:</b> teach just that passage (<b>Piece → Teach</b>); taught sections are used where they fit better.</li>
+          <li><b>Check my notes flags a note you played:</b> very soft notes can go unheard, and the sheet music reader sometimes misreads a note. If the same note is flagged every time, the reading is probably wrong there.</li>
         </ul>
       </details>
       <div class="actions"><button id="helpTour" class="btn small" type="button">Show the welcome tour</button></div>
@@ -268,7 +275,7 @@
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-plus"/></svg></span><h2>Bring your music</h2><p>Tap the piece's name at the top left to open your Library, then <b>Add a PDF</b>. Scans and photos of music work.</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-piece"/></svg></span><h2>Teach it, or add the sheet music</h2><p>Under <b>Piece</b>: add the piece's MusicXML file and ScoreAtlas follows it right away, or <b>Teach</b> it by playing it once while turning the pages yourself.</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-mic"/></svg></span><h2>Tap Follow and play</h2><p>The bar you're playing lights up, and the page turns just before you need it. Stop, repeat, skip around: it keeps up. Your Bluetooth pedal works too.</p></div>
-        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-loop"/></svg></span><h2>Practise with purpose</h2><p>Loop a passage and count each repetition, see a report of your session, listen back, and write fingerings with Apple Pencil (tap <b>Mark</b> first).</p></div>
+        <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-loop"/></svg></span><h2>Practice with purpose</h2><p>Loop a passage and count each repetition, see a report of your session, listen back, and write fingerings with Apple Pencil (tap <b>Mark</b> first).</p></div>
         <div class="tour-step"><span class="tour-icon"><svg class="i"><use href="#i-lock"/></svg></span><h2>Ready for the stage</h2><p>Setlists, two pages side by side, half-page turns and a lock for performing. Everything stays on your iPad and works offline.</p><p class="note">When you first tap Follow, allow the microphone.</p></div>
         <div class="tour-dots" id="tourDots" aria-hidden="true"></div>
         <div class="tour-nav">
@@ -320,7 +327,7 @@
           <button id="replayCardBtn" class="btn small" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span>Listen back</span></button>
           <button id="journalBtn" class="btn small" type="button">Practice journal</button>
         </div>
-        <p class="note" id="practiceNote">After practising with Follow, tap Stop for a report of your session, and listen back to it.</p>
+        <p class="note" id="practiceNote">After practicing with Follow, tap Stop for a report of your session, and listen back to it.</p>
       </section>
 
       <section class="group">
@@ -344,8 +351,11 @@
       </section>
 
       <details class="group whatsnew">
-        <summary>What's new in Test 14</summary>
+        <summary>What's new in Test 15</summary>
         <ol>
+          <li><b>Check my notes</b>: after you stop, the practice report can listen to your session for missed and wrong notes, and marks those bars in red.</li>
+          <li><b>Steadier practice</b>: once you turn to a page, Follow stays with the music on it instead of jumping to a passage elsewhere that only sounds alike.</li>
+          <li><b>Pen sizes</b> in Mark: thin, medium or thick.</li>
           <li><b>Go to</b>: tap the page number to jump to a page or a bar, or to a bookmark.</li>
           <li><b>View</b>: Trim margins (bigger music), Dark pages, and a <b>Metronome</b> with a <b>tempo ladder</b> for loops.</li>
           <li><b>Practice journal</b> (here, under Practice): your practice across days.</li>

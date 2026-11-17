@@ -102,7 +102,7 @@ for (const [file, pagesAfter] of [["aba_repeat.musicxml", [2, 3]], ["omr/aba_rep
 }
 
 // 4) Solo part: a duet version of the piece. Part 2 (the "orchestra") holds chords under the piano throughout and
-// has 8 bars on its own between B and the last A, where the piano rests. The pianist practises alone, so the
+// has 8 bars on its own between B and the last A, where the piano rests. The pianist practices alone, so the
 // performance goes from B straight on to A. Keeping only the piano part, the turns must still come on time.
 {
   const file = "aba_repeat.musicxml";

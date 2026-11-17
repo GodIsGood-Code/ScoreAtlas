@@ -6,10 +6,10 @@
 // findMeasures(gray, width, height, systemsMeasureCounts) -> [{ x0, y0, x1, y1 }] per measure on the page,
 // as fractions of the page size, in reading order; or null if the page doesn't look as expected.
 
-const DARK = 200; // a pixel counts as ink below this brightness (thin lines are often grey once scanned)
+const DARK = 200; // a pixel counts as ink below this brightness (thin lines are often gray once scanned)
 
 // Long horizontal lines: peaks of ink per row (a thin line falling between two pixel rows leaves each of them
-// half grey; noteheads or beams touching a line make it wider, not taller). Returns [{ y, ink }].
+// half gray; noteheads or beams touching a line make it wider, not taller). Returns [{ y, ink }].
 function staffLines(gray, w, h) {
   const rows = new Float64Array(h);
   for (let y = 0; y < h; y++) {
@@ -24,9 +24,9 @@ function staffLines(gray, w, h) {
     if (rows[y] < rows[y - 1] || rows[y] < rows[y + 1]) continue;
     const a = rows[y - 1], b = rows[y], c = rows[y + 1];
     if (b + Math.max(a, c) < limit) continue; // a thin line may be shared between two rows of pixels
-    const centre = y + (c - a) / (2 * Math.max(1e-6, 2 * b - a - c)) * 0.5;
-    const line = { y: centre, ink: b + Math.max(a, c) };
-    if (lines.length && centre - lines[lines.length - 1].y < 2) {
+    const center = y + (c - a) / (2 * Math.max(1e-6, 2 * b - a - c)) * 0.5;
+    const line = { y: center, ink: b + Math.max(a, c) };
+    if (lines.length && center - lines[lines.length - 1].y < 2) {
       if (line.ink > lines[lines.length - 1].ink) lines[lines.length - 1] = line; // keep the stronger of two close peaks
       continue;
     }
@@ -124,7 +124,7 @@ function barlines(gray, w, sys) {
   };
   const cover = (x, s) => {
     if (x < 0 || x + 1 >= w) return 0;
-    // a scanned barline is often two pixels wide with a grey edge: ink in this column or the next one counts
+    // a scanned barline is often two pixels wide with a gray edge: ink in this column or the next one counts
     const dark = (y) => gray[y * w + x] < DARK || gray[y * w + x + 1] < DARK;
     let d = 0, n = 0;
     const m0 = Math.round(s.top + s.space), m1 = Math.round(s.bottom - s.space);
@@ -166,7 +166,7 @@ function barlines(gray, w, sys) {
     }
     cols.push({ x, score: minCover + gap });
   }
-  // join neighbouring columns, and double bars or repeat signs (lines close together), into one barline
+  // join neighboring columns, and double bars or repeat signs (lines close together), into one barline
   const space = st[0].space;
   const out = [];
   for (const c of cols) {

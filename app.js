@@ -12,6 +12,7 @@ import { LibraryUI } from "./library.js";
 import { Metronome, TempoLadder } from "./metronome.js";
 import { renderJournal } from "./journal.js";
 import { makeBackup, restoreBackup, shareFile, wavFile, markedPdf } from "./share.js";
+import { expectedNotes, checkNotes, noteName } from "./engine/notecheck.js";
 import { readScore, keepParts, withPageStarts, shiftPages, parsePageStarts, playOrder, suggestParts } from "./engine/score.js";
 import { scoreSection } from "./engine/scorelesson.js";
 import { findMeasures, findMeasuresByCount, systemCounts } from "./engine/layout.js";
@@ -417,6 +418,7 @@ function releaseMic() {
 async function startTeach() {
   if (!state.pdf || mode !== "idle") return;
   const ready = startMic(); // must begin inside the tap
+  stopNoteCheck(); // it would slow the listening down
   mode = "teach";
   teach = { frames: [], turns: [], startPage: state.page }; // a section starts wherever the pianist is
   updateButtons();
@@ -459,6 +461,7 @@ function finishTeach() {
 async function startFollow() {
   if (!state.lesson || mode !== "idle") return;
   const ready = startMic();
+  stopNoteCheck(); // it would slow the listening down
   mode = "follow";
   // Start from the page on screen: the pianist may begin anywhere, and the page is a hint where
   follower = new Follower(state.lesson, {
@@ -518,6 +521,8 @@ window.pageTurner = {
   get locked() { return locked; },
   showTour: () => showTour(),
   get settings() { return { ...settings }; },
+  set noteCheckLimit(s) { noteCheckLimit = s; },
+  get notecheck() { return lastReport && lastReport.notecheck ? { checked: lastReport.notecheck.checked, missed: lastReport.notecheck.missed, wrong: lastReport.notecheck.wrong } : null; },
   get setlist() { return setlist ? { name: setlist.list.name, index: setlist.index, count: setlist.list.items.length } : null; },
   marks: () => marks.data(),
 };
@@ -757,6 +762,17 @@ function drawOverlay() {
       overlay.append(el);
     }
   }
+  if (lastReport && lastReport.notecheck && !reportPanel.hidden) {
+    for (const [m, v] of lastReport.notecheck.byMeasure) {
+      const n = v.missed + v.wrong;
+      if (!n || !here(m)) continue;
+      const el = document.createElement("div");
+      el.className = "note-mark";
+      el.dataset.count = `${n} ✕`;
+      placeOnPage(el, sec.layout[m], here(m).canvas);
+      overlay.append(el);
+    }
+  }
   if (loop || loopPick === 2) {
     const a = loop ? loop.from : loopFirst, z = loop ? loop.to : loopFirst;
     for (let m = a; m <= z; m++) {
@@ -901,7 +917,7 @@ function renderReport() {
 
   const busy = busiestPassages(r.plays, barInfoOf(sec).length);
   if (busy.length) {
-    body.append(el("h3", null, "Practised most"));
+    body.append(el("h3", null, "Practiced most"));
     const list = el("ul", "report-list");
     for (const b of busy) {
       const li = el("li");
@@ -924,6 +940,39 @@ function renderReport() {
       list.append(li);
     }
     body.append(list);
+  }
+  // wrong-note detection: listen to the session's recording for missed and wrong notes
+  const canCheck = lastRecording && lastRecording.log === r.log && sec.scoreFile;
+  if (canCheck || r.notecheck) {
+    body.append(el("h3", null, "Notes"));
+    if (!r.notecheck) {
+      const b = el("button", "btn small primary", "Check my notes");
+      b.type = "button";
+      b.id = "checkNotesBtn";
+      b.addEventListener("click", () => checkMyNotes());
+      body.append(b, el("p", "note", "Listens to the recording of this session for missed and wrong notes. Takes a little while; the iPad works it out on its own."));
+    } else {
+      const nc = r.notecheck;
+      body.append(el("p", "report-sum", nc.missed + nc.wrong
+        ? `${plural(nc.checked, "note")} checked: ${nc.missed} missed${nc.wrong ? `, ${nc.wrong} wrong` : ""}`
+        : `${plural(nc.checked, "note")} checked: all there. Well played!`));
+      const worst = [...nc.byMeasure].filter(([, v]) => v.missed + v.wrong).sort((a, b) => (b[1].missed + b[1].wrong) - (a[1].missed + a[1].wrong) || a[0] - b[0]).slice(0, 8);
+      if (worst.length) {
+        const list = el("ul", "report-list");
+        for (const [m] of worst) {
+          const here = nc.notes.filter((x) => x.measure === m && (x.status === "missed" || x.status === "wrong"));
+          const missed = [...new Set(here.filter((x) => x.status === "missed").map((x) => noteName(x.midi)))];
+          const wrong = [...new Set(here.filter((x) => x.status === "wrong").map((x) => `${noteName(x.instead)} for ${noteName(x.midi)}`))];
+          const what = [missed.length ? `missed ${missed.join(", ")}` : "", wrong.length ? `played ${wrong.join(", ")}` : ""].filter(Boolean).join(" · ");
+          const li = el("li");
+          li.className = "notes-item";
+          li.append(goTo(m, `Bar ${name(m)}`), el("span", "notes-what", what), listen(here[0] ? here[0].tc : null));
+          list.append(li);
+        }
+        body.append(list);
+        body.append(el("p", "note", "Bars with mistakes are marked in red on the music while this report is open. The sheet music reader can misread a note now and then: if the same note is flagged every time though you play it, the reading is probably wrong there."));
+      }
+    }
   }
   if (r.loop && r.loopReps.length) {
     const lm = playedRangeToMeasures(r.loop);
@@ -1208,7 +1257,7 @@ function replayFromClock(t) {
 
 const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps
 
-// A page of the PDF as a grey image, about 130 dots per inch, for finding the measures
+// A page of the PDF as a gray image, about 130 dots per inch, for finding the measures
 async function pageImage(n) {
   const page = await state.pdf.getPage(n);
   const base = page.getViewport({ scale: 1 });
@@ -1458,6 +1507,12 @@ for (const b of $("digitRow").querySelectorAll("button")) b.addEventListener("cl
   for (const x of $("digitRow").querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
 });
 $("markUndo").addEventListener("click", () => { if (!marks.undo()) toast("Nothing to undo", 1000); });
+for (const b of $("sizeRow").querySelectorAll("button")) b.addEventListener("click", () => {
+  marks.size = Number(b.dataset.size);
+  for (const x of $("sizeRow").querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+  try { localStorage.setItem("pt-pen-size", b.dataset.size); } catch {}
+});
+try { const z = localStorage.getItem("pt-pen-size"); if (z) $("sizeRow").querySelector(`[data-size="${z}"]`).click(); } catch {}
 $("markClear").addEventListener("click", (e) => {
   const b = e.currentTarget;
   if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Clear page"; }, 3000); return; }
@@ -1793,6 +1848,71 @@ $("restoreInput").addEventListener("change", async () => {
     toast(err.message || "Couldn't restore that file.", 3200);
   }
 });
+
+/* ---------- Wrong-note detection (after a session, from its recording) ---------- */
+let noteJob = null;
+let noteCheckLimit = 12 * 60; // seconds of a session checked at most (the newest)
+function stopNoteCheck() {
+  if (noteJob) noteJob.stop = true;
+}
+async function checkMyNotes() {
+  const r = lastReport, R = lastRecording;
+  if (!r || !R || R.log !== r.log || noteJob) return;
+  const sec = r.sec;
+  const job = (noteJob = { stop: false });
+  const say = (text) => { if (!job.stop) setStatus(text); }; // once stopped, the status line belongs to Follow
+  const btn = $("checkNotesBtn");
+  if (btn) btn.disabled = true;
+  try {
+    // the stretches that were played (with sheet music), newest last; at most the last 12 minutes
+    const runs = [];
+    let cur = null;
+    for (const b of r.bars) {
+      if (b.t0 === null || b.t0 === undefined) continue;
+      const end = b.t1 !== null && b.t1 !== undefined ? b.t1 : b.t0 + 2;
+      if (cur && b.t0 - cur.z < 1.5) cur.z = Math.max(cur.z, end);
+      else { cur = { a: b.t0, z: end }; runs.push(cur); }
+    }
+    let budget = noteCheckLimit;
+    const chosen = [];
+    for (let i = runs.length - 1; i >= 0 && budget > 0; i--) {
+      const run = { ...runs[i] };
+      run.a = Math.max(run.a, run.z - budget); // a long run: its last part
+      chosen.unshift(run);
+      budget -= run.z - run.a;
+    }
+    const total = chosen.reduce((n, x) => n + (x.z - x.a), 0);
+    let done = 0;
+    const { hearNotes } = await import("./pitch.js");
+    const heard = [], soft = [];
+    say("Getting the note listener ready…");
+    for (const run of chosen) {
+      const s0 = Math.max(0, Math.floor((run.a - 0.5 - R.startTime) * R.rate));
+      const s1 = Math.min(R.samples.length, Math.ceil((run.z + 0.5 - R.startTime) * R.rate));
+      if (s1 <= s0) continue;
+      const got = await hearNotes(R.samples.subarray(s0, s1), R.rate, {
+        onProgress: (p) => say(`Listening for missed and wrong notes… ${Math.round((100 * (done + p * (run.z - run.a))) / Math.max(1, total))}%`),
+        stop: () => job.stop,
+      });
+      if (!got || job.stop) return; // stopped: Follow or Teach started
+      done += run.z - run.a;
+      for (const n of got.notes) heard.push({ ...n, t: n.t + s0 / R.rate + R.startTime });
+      for (const n of got.soft) soft.push({ ...n, t: n.t + s0 / R.rate + R.startTime });
+    }
+    const score = keepParts(readScore(sec.scoreFile), sec.options && sec.options.parts);
+    const expected = expectedNotes(r.bars.filter((b) => b.t0 !== null && b.t0 >= (chosen[0] ? chosen[0].a - 0.01 : 0)), score.measures);
+    r.notecheck = checkNotes(expected, heard, undefined, soft);
+    say(null);
+    renderReport();
+    drawOverlay();
+  } catch (err) {
+    say(null);
+    if (!job.stop) toast(`Couldn't check the notes: ${err.message || err}`, 3200);
+    if (btn) btn.disabled = false;
+  } finally {
+    noteJob = null;
+  }
+}
 
 /* ---------- Share with a teacher ---------- */
 $("shareMarked").addEventListener("click", async () => {

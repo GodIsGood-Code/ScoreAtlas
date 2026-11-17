@@ -40,7 +40,7 @@ export function renderJournal(el, sessions, barName) {
   el.textContent = "";
   const make = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   if (!sessions.length) {
-    el.append(make("p", "note", "Nothing yet. Practise this piece with Follow (with its sheet music added) and tap Stop; each session is added here."));
+    el.append(make("p", "note", "Nothing yet. Practice this piece with Follow (with its sheet music added) and tap Stop; each session is added here."));
     return;
   }
   const j = journal(sessions);
@@ -69,7 +69,7 @@ export function renderJournal(el, sessions, barName) {
   el.append(ul);
 }
 
-// Bars for the minutes practised each day; tap a bar for its day and minutes
+// Bars for the minutes practiced each day; tap a bar for its day and minutes
 function dayChart(days, make) {
   const NS = "http://www.w3.org/2000/svg";
   const W = 340, H = 120, L = 28, R = 4, T = 8, B = 20;
@@ -79,7 +79,7 @@ function dayChart(days, make) {
   svg.setAttribute("role", "img");
   const mins = days.map((d) => d.seconds / 60);
   const top = Math.max(10, Math.ceil(Math.max(...mins) / 10) * 10);
-  svg.setAttribute("aria-label", `Minutes practised each day for two weeks, up to ${Math.round(Math.max(...mins))} minutes`);
+  svg.setAttribute("aria-label", `Minutes practiced each day for two weeks, up to ${Math.round(Math.max(...mins))} minutes`);
   const add = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; svg.append(e); return e; };
   const y = (v) => T + ((top - v) * (H - T - B)) / top;
   for (const v of [0, top / 2, top]) {

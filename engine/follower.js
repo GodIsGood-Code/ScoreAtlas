@@ -24,6 +24,8 @@ export const FOLLOW_SETTINGS = {
   anticipation: 0.3, // seconds: turn this much before the moment the page was turned in the lesson
   scoreLead: 0.5, // seconds more for turns learned from sheet music: the eyes read ahead of the hands (owner, Test 8)
   farAgree: 1.2, // seconds that lookups must keep agreeing before a so-so match moves us to another page
+  anchorTime: 30, // seconds a page the pianist turned to holds (renewed as they play on over page turns)
+  anchorRatio: 0.6, // leaving that page needs a strong match this much better than the best place on it (owner, Test 13)
   unsureCost: 0.25, // recent match cost above which the follower is unsure and holds turns
   searchBack: 30, // seconds behind the current position still tracked (keeps long pieces light)
   // Practice: finding the pianist anywhere in the piece
@@ -46,7 +48,7 @@ export const FOLLOW_SETTINGS = {
   // Sections learned from sheet music match real playing less closely than a taught playthrough (no pedal,
   // dynamics or timing in the written notes): real playing fits at about 0.35–0.6 of the background there,
   // random playing at about 0.65–0.9. The same checks, with these limits:
-  score: { goodRatio: 0.6, strongRatio: 0.42, turnRatio: 0.65, lostRatio: 0.72, jumpMargin: 0.06, alikeMargin: 0.08, trackRatio: 0.55, tail: false },
+  score: { goodRatio: 0.6, strongRatio: 0.42, turnRatio: 0.65, lostRatio: 0.72, jumpMargin: 0.06, alikeMargin: 0.03, trackRatio: 0.55, tail: false },
   ambiguity: 1.12, // results within this ratio of the best count as equally good (e.g. a repeat) ...
   pageAmbiguity: 1.3, // ... and within this ratio, a copy on the page showing (or the next) still counts as the same music
   alikeMargin: 0.04, // ... or within this much of it: tiny differences between identical passages are noise
@@ -219,8 +221,34 @@ export class Follower {
       searchEvery: s(settings.searchEvery), checkEvery: s(settings.checkEvery), jump: s(settings.jumpDistance),
       lost: s(settings.lostAfter), ahead: s(settings.anticipation), back: s(settings.searchBack), flip: s(settings.flipHint),
       holdRelease: s(settings.holdRelease), scoreLead: s(settings.scoreLead || 0), farAgree: s(settings.farAgree),
+      anchor: s(settings.anchorTime || 30),
     };
     this.flip = null;
+  }
+
+  // The page the pianist turned to (in the last half minute, or played on from there): places on it or next to it are
+  // fine; anywhere else must fit clearly better than the best place there (similar passages elsewhere are common)
+  anchorOk(frame) {
+    const a = this.anchor;
+    return !a || this.clock >= a.until || Math.abs(this.pageAt[frame] - a.page) <= 1;
+  }
+  anchorBest(row) {
+    const a = this.anchor, se = this.searcher;
+    let best = null;
+    for (let c = 0; c < row.length; c++) {
+      const f = se.endFrame[c];
+      if (Math.abs(this.pageAt[f] - a.page) > 1) continue;
+      if (!best || row[c] < best.cost) best = { frame: f, cost: row[c] };
+    }
+    return best;
+  }
+  // a move to `pick` that leaves the pianist's page: allowed only when strong and well ahead of the best there
+  leavesAnchor(pick, row, background) {
+    if (this.anchorOk(pick.frame)) return null;
+    const best = this.anchorBest(row);
+    const strong = pick.cost <= this.limits(pick.frame).strongRatio * background;
+    if (strong && (!best || pick.cost <= this.cfg.anchorRatio * best.cost)) return null;
+    return best || { frame: -1, cost: Infinity };
   }
 
   // How far ahead of a page turn's moment the page is turned, in lesson frames. The lead is meant in the pianist's
@@ -402,6 +430,8 @@ export class Follower {
   show(page, why) {
     if (page === this.page) return;
     this.page = page;
+    // playing on over a page turn keeps the pianist's page choice in force, on the new page
+    if (why === "turn" && this.anchor && this.clock < this.anchor.until) this.anchor = { page, until: this.clock + this.frames.anchor };
     if (this.onTurn) this.onTurn(page, why);
   }
 
@@ -474,7 +504,8 @@ export class Follower {
   lookUp() {
     if (!this.enoughToLookUp()) return;
     this.sinceLookup = 0;
-    let { candidates, background } = this.searcher.search(this.recent);
+    let { candidates, background, row } = this.searcher.search(this.recent);
+    this.lastSearch = { row, background };
     let pick = this.choose(candidates, background);
     let strong = pick && candidates[0].cost <= this.limits(candidates[0].frame).strongRatio * background;
     if (!strong && this.recent.length > this.frames.minQuery && (!pick || this.limits(pick.frame).tail)) {
@@ -483,6 +514,7 @@ export class Follower {
       const tailPick = this.choose(tail.candidates, tail.background);
       if (tailPick && this.limits(tailPick.frame).tail && tail.candidates[0].cost <= this.cfg.strongRatio * tail.background) {
         ({ candidates, background } = tail);
+        this.lastSearch = { row: tail.row, background: tail.background };
         pick = tailPick;
         strong = true;
       }
@@ -499,6 +531,17 @@ export class Follower {
       } else this.nearVote = null;
     }
     if (!pick) { this.pending = null; return; }
+    {
+      const lookup = this.lastSearch;
+      const stay = lookup ? this.leavesAnchor(pick, lookup.row, lookup.background) : null;
+      if (stay) {
+        // the place on the pianist's page, if it fits well enough; otherwise wait
+        if (stay.frame >= 0 && stay.cost <= this.limits(stay.frame).goodRatio * background && stay.cost <= this.cfg.goodCost) {
+          pick = { frame: stay.frame, cost: stay.cost };
+          strong = stay.cost <= this.limits(stay.frame).strongRatio * background;
+        } else { this.pending = null; return; }
+      }
+    }
     // Just lost the pianist? They most likely picked up where they were (playing something else doesn't move
     // them through the piece): prefer the good place closest to there, unless somewhere else fits clearly better
     if (this.lostAt && this.clock - this.lostAt.clock < 20 * FRAME_RATE) {
@@ -559,6 +602,7 @@ export class Follower {
       this.expectJump = false;
       return;
     }
+    if (this.leavesAnchor(pick, row, background)) { this.vote = null; return; }
     if (Math.abs(pick.frame - this.position) <= F.jump) {
       // the best fit is where we already are: the pianist went on from there
       this.vote = null;
@@ -618,6 +662,8 @@ export class Follower {
   // The pianist turned a page by hand
   pianistTurned(page) {
     this.page = page;
+    // the pianist has shown us where they are: stay on that page (or next to it) unless the music clearly says otherwise
+    this.anchor = { page, until: this.clock + this.frames.anchor };
     const turns = this.lesson.turns;
     // skip any automatic turn that is due now or very soon: the pianist took care of it
     while (this.turnIndex < turns.length && turns[this.turnIndex].frame <= this.position + 3 * this.aheadOf(turns[this.turnIndex])) this.turnIndex++;

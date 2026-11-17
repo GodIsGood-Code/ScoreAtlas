@@ -1,4 +1,4 @@
-// Markings on the music with Apple Pencil or a finger, while "Mark" is on (so nothing is marked by accident): pen in three colours, highlighter,
+// Markings on the music with Apple Pencil or a finger, while "Mark" is on (so nothing is marked by accident): pen in three colors, highlighter,
 // fingering numbers, an eraser that removes whole strokes, and undo. Strokes are kept as points relative to the page
 // (0..1 across and down), so they stay in place at any size, in two-page view and in half-page view.
 // While the Pencil is writing, touches from the hand resting on the screen are ignored (they don't turn the page).
@@ -13,6 +13,7 @@ export class Marks {
     this.layers = new Map(); // page -> its canvas on screen
     this.tool = { kind: "pen", color: INKS.black }; // kind: pen, highlight, finger (digit), erase
     this.digit = "1";
+    this.size = 1; // stroke size: 0.6 thin, 1 medium, 1.8 thick
     this.markMode = false; // fingers draw too
     this.undoStack = [];
     this.save = save;
@@ -87,7 +88,7 @@ export class Marks {
     ctx.save();
     if (s.t === "text") {
       ctx.fillStyle = s.c;
-      ctx.font = `700 ${Math.round(0.026 * W)}px "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif`;
+      ctx.font = `700 ${Math.round(0.026 * W * Math.sqrt(s.z || 1))}px "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(s.s, s.x * W, s.y * H);
@@ -141,14 +142,14 @@ export class Marks {
       const scale = { x: r.width / (k.x1 - k.x0), y: r.height / (k.y1 - k.y0) }; // screen pixels per page fraction
       const [x, y, p] = at(e);
       if (this.tool.kind === "finger") {
-        this.add(page, { t: "text", s: this.digit, x, y, c: INKS.blue });
+        this.add(page, { t: "text", s: this.digit, x, y, c: INKS.blue, z: this.size });
         return;
       }
       try { root.setPointerCapture(e.pointerId); } catch {}
       this.active = { id: e.pointerId, page, c, r: scale, at, erased: [] };
       if (this.tool.kind === "erase") { this.eraseAt(this.active, x, y); return; }
       const hl = this.tool.kind === "highlight";
-      this.active.stroke = hl ? { t: "hl", w: 0.018, p: [x, y, p] } : { t: "pen", c: this.tool.color, w: 0.0022, p: [x, y, p] };
+      this.active.stroke = hl ? { t: "hl", w: 0.018 * this.size, p: [x, y, p] } : { t: "pen", c: this.tool.color, w: 0.0022 * this.size, p: [x, y, p] };
       this.paintOn(c, this.active.stroke);
     }, true);
     root.addEventListener("pointermove", (e) => {

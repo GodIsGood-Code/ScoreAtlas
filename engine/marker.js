@@ -1,5 +1,5 @@
 // Smooths the measure highlight. The follower's idea of where the pianist is wobbles a little from moment to moment,
-// which would make the highlight flicker between neighbouring measures. Working in the order the measures are
+// which would make the highlight flicker between neighboring measures. Working in the order the measures are
 // played, the highlight moves forward at once by one measure, further only if that holds for a moment, back only
 // if that holds for longer (the pianist really went back), and through a brief uncertain moment it stays put.
 
