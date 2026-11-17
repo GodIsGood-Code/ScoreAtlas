@@ -10,17 +10,17 @@ Everything written so far for the release, and what's left. The app will launch 
 - Privacy policy: `privacy.html`, live at https://godisgood-code.github.io/ScoreAtlas/privacy.html
 - Support page: `support.html`, live at https://godisgood-code.github.io/ScoreAtlas/support.html
 - In the app: a first-launch tour, Settings (page-turn timing, highlight, tap to turn, appearance) and Help.
-- App icons: `icons/` (512 px). The App Store needs a 1024 × 1024 version without transparency; make it from the
-  same design when packaging.
+- App icons: `icons/`, including `icon-1024.png` for the App Store (no transparency), drawn by `tools/make_icons.py`,
+  which also fills the iPad app's icon and launch screen.
 
 ## Still to do
 
 1. **Apple Developer account** (the owner is arranging it): $99 a year at developer.apple.com, in the name that
    should appear as the seller.
-2. **Package the web app as an iPad app** with Capacitor (Claude can set this up). On the owner's Mac:
-   install Xcode from the Mac App Store, then the packaging project, open it in Xcode, sign in with the developer
-   account, and run it on the iPad. Things to check in the packaged app: the microphone permission prompt, the
-   Bluetooth pedal, Apple Pencil, opening PDFs and MusicXML from Files, and that the library survives restarts.
+2. **Package the web app as an iPad app**: done (Test 17), in `native/` (Capacitor 8; see `native/README.md` for the
+   owner's steps: GitHub Desktop, open `native/ios/App/App.xcodeproj`, pick the team, Run). Still to check on the iPad
+   in the packaged app: the microphone permission prompt, the Bluetooth pedal, Apple Pencil, pinch to zoom, opening
+   PDFs and MusicXML from Files and AirDrop, Check my notes (speed), and that the library survives restarts.
 3. **Final wording**: remove "Test" labels and the "What's new in Test …" section; the tour and Help stay.
 4. **Screenshots** (see `app-store.md`), taken on the iPad or the Xcode simulator.
 5. **Fill in App Store Connect**: create the app, paste the texts, upload screenshots, answer the privacy and age

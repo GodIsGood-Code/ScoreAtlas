@@ -54,7 +54,11 @@ export const listMeta = () => run("files", "readonly", (s) => s.getAll(IDBKeyRan
 export async function removePiece(key) {
   await run("files", "readwrite", (s) => { s.delete(`piece|${key}`); return s.delete(`meta|${key}`); });
   // and what the app learned about it: the lesson, Pencil markings, practice history
-  await run("lessons", "readwrite", (s) => { s.delete(key); s.delete(`${key}|marks`); s.delete(`${key}|bookmarks`); return s.delete(`${key}|practice`); }).catch(() => {});
+  await run("lessons", "readwrite", (s) => {
+    s.delete(key); s.delete(`${key}|marks`); s.delete(`${key}|bookmarks`); s.delete(`${key}|ignore`); s.delete(`${key}|takes`);
+    s.delete(IDBKeyRange.bound(`${key}|take|`, `${key}|take|\uffff`)); // kept recordings
+    return s.delete(`${key}|practice`);
+  }).catch(() => {});
 }
 export const loadSetlists = () => run("files", "readonly", (s) => s.get("setlists")).then((x) => x || []).catch(() => []);
 export const saveSetlists = (lists) => run("files", "readwrite", (s) => s.put(lists, "setlists"));

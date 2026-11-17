@@ -1,0 +1,10 @@
+App/build
+App/Pods
+App/output
+DerivedData
+xcuserdata
+
+# Cordova plugins for Capacitor
+capacitor-cordova-ios-plugins
+
+# (public/, capacitor.config.json and config.xml are kept in git, so the project opens with Xcode alone)

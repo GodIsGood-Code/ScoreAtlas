@@ -7,6 +7,33 @@ language; the owner tests on their iPad and reports back.
 
 ## Status
 
+- **Test 17:** the two features the owner picked from Claude's short list, and **App Store packaging** (owner has
+  Xcode). **Pinch to zoom** (`zoom` { z, x, y, res } in app.js): two pointers on the stand zoom around their midpoint
+  (`zoomTo`, CSS transform on `.sheet`, 1–4x), one pointer pans while zoomed (taps still turn pages; a drag isn't a
+  swipe), clamped so the music covers the screen (`clampZoom`), Ctrl+wheel on a computer; 300 ms after the fingers
+  stop the pages are drawn again at 1.5/2/3/4x resolution (`zoom.res` in `layoutKey` and the render scale); a turn
+  keeps the zoom and shows the new page from its top; "Whole page" chip (`#zoomChip`); not in Mark mode or locked;
+  a new piece starts unzoomed. **Kept takes**: Keep this take (report, or the replay bar's `#rpKeep`) saves the last
+  session as `<key>|take|<id>` { name, date, rate, duration, startTime, samples: Int16 16 kHz (about 2 MB a minute),
+  track: bar every 0.1 s (`barTrack`), turns, firstPage, hand } with an index `<key>|takes`; Practice → Kept takes
+  (`showTakes`): play (replay now takes any recording: `startReplay(at, R)`, `replay.R`, `R.track` for the
+  highlight, `#rpTitle`), rename, share as WAV, delete; removed with the piece, moved by Edit pages, in backups.
+  **Fonts** built in (`vendor/fonts/`, Fontsource woff2, OFL) instead of Google Fonts; privacy page updated.
+  **iPad app** (`native/`, Capacitor 8.6.0, Swift Package Manager): `npm run build` = `copy-web.mjs` (sw.js's file
+  list + licenses → `www/`) + `npx cap sync ios`; `ios/App/App/public/`, `capacitor.config.json` and `config.xml` are
+  committed so the owner's Mac needs only Xcode (Capacitor itself comes from GitHub through SPM). App ID
+  `io.github.godisgoodcode.scoreatlas` (owner may change it), iPad only (`TARGETED_DEVICE_FAMILY = 2`), iOS 15+.
+  `SceneDelegate.swift`: `ScoreAtlasViewController` (a `CAPBridgeViewController`) with a `scoreAtlas` message handler
+  ({ ready } → hands over waiting files; { keepAwake } → `isIdleTimerDisabled`); files opened with ScoreAtlas (cold
+  start or later) are copied to tmp/Opened and passed to `window.scoreAtlasOpen(fileURL, name)`, which fetches them
+  through `Capacitor.convertFileSrc` and calls `addFiles`. Info.plist: microphone text, PDF / MusicXML / .scoreatlas
+  document types (imported UTIs com.recordare.musicxml[.compressed], exported io.github.godisgoodcode.scoreatlas.bundle),
+  `LSSupportsOpeningDocumentsInPlace` false, `ITSAppUsesNonExemptEncryption` false, arm64. Web side: `NATIVE`,
+  `native(msg)`, `.native` on `<html>` (`.web-only` / `.app-only` help lines), links to privacy/support/the Mac
+  helper are absolute (they open in Safari). Icon redrawn at 1024 and the launch screen by `tools/make_icons.py`.
+  `native/README.md`: the owner's steps (GitHub Desktop, open App.xcodeproj, Team, Run; Developer Mode; archive and
+  upload) and how to update. Not built here (no Xcode in the container): the Swift was checked against Capacitor 8's
+  sources; the owner's first run is the real test.
 - **Test 16:** the owner's Test 15 feedback (liked everything; following tracked well on run-throughs and better in
   practice, but still went to the wrong place at times while they played something on the page; asked for a pen-size
   slider, a color wheel, typed metronome tempo and more beat types; couldn't verify Check my notes, so Claude was to
@@ -331,6 +358,9 @@ Steps are numbered across phases, in order. Work through them in that order unle
   `sw.js`: offline (cache `page-turner-v2`). `pages.js`: Edit pages. `importer.js`: pairing added files.
   `metronome.js`: `Metronome` (beats, unit, subdiv, tap) and `TempoLadder`. `journal.js`: journal and `noteHistory`.
 - `mac/`: the ScoreAtlas Reader helper for the owner's Mac (see Test 16).
+- `native/`: the iPad app (Capacitor 8; see Test 17 and `native/README.md`). Rebuild it (`cd native && npm install &&
+  npm run build`) and commit `native/ios/App/App/public/` whenever the web app changes before an App Store upload.
+- `vendor/fonts/`: the app's typefaces (Atkinson Hyperlegible 400/700, Fraunces 600, IBM Plex Mono 500). OFL.
 - `vendor/pdf-lib/`: pdf-lib 1.17.1 (ESM, minified; edits PDFs losslessly). MIT.
 - `app.js`: viewer, pedal, taps, Teach and Follow, test card. `window.pageTurner` exposes the audio clock and a
   log of page turns for tests and troubleshooting.
@@ -360,6 +390,12 @@ Steps are numbered across phases, in order. Work through them in that order unle
     practice sessions with sections). Currently all pass (14/14 found, 10/10 turns).
   - `node tests/recorder-unit.js`: the recorder (length, clock, a 440 Hz tone kept, the limit).
   - `node tests/practice-unit.js`: practice insights from made-up sessions (plays, hesitations, tempo, loop).
+  - `NODE_PATH="$(npm root -g)" node tests/test17.cjs`: pinch to zoom (synthetic two-finger pointers: 3x, sharper
+    redraw, one-finger pan without a turn, a turn keeps the zoom from the top, Whole page) and kept takes (keep after a
+    session with the fake microphone, rename, play after a reload with the highlight, share as WAV, delete).
+  - `NODE_PATH="$(npm root -g)" node tests/native-sim.cjs`: `native/www` served with stand-ins for Capacitor and the
+    message handler: opens, says ready and keep awake, fonts built in, a handed-over file opens, web-only help hidden,
+    no missing files, no requests outside the app.
   - `node tests/test16-unit.js`: trouble spots, pairing files, one hand, markings moved with pages, the metronome's
     accents and tap tempo, notes over time.
   - `NODE_PATH="$(npm root -g)" node tests/test16.cjs`: real browser, about a minute: Practice tools off without sheet

@@ -7,9 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ScoreAtlas">
   <title>ScoreAtlas</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="vendor/fonts/fonts.css">
   <link rel="stylesheet" href="styles.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -50,7 +48,7 @@
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 16</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">Test 17</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -92,6 +90,7 @@
             <div class="menu-list">
               <button id="reportBtn" class="menu-item" type="button" hidden><svg class="i"><use href="#i-target"/></svg><span><b>Last session's report</b><small>Bars, hesitations, tempo, notes</small></span></button>
               <button id="replayCardBtn" class="menu-item" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span><b>Listen back</b><small>Your last session, with the pages following</small></span></button>
+              <button id="takesBtn" class="menu-item" type="button"><svg class="i"><use href="#i-play"/></svg><span><b>Kept takes</b><small>Recordings you saved, to listen to or share</small></span></button>
               <button id="journalBtn" class="menu-item" type="button"><svg class="i"><use href="#i-book"/></svg><span><b>Practice journal</b><small>Your practice across days</small></span></button>
             </div>
             <p class="note" id="practiceNote">Tools that need sheet music (loops, trouble spots, hearing the music, hands) wake up once the piece has it.</p>
@@ -119,11 +118,13 @@
       <div class="progress" id="progress" hidden><i id="progressFill"></i></div>
       <div class="modebar" id="modebar" hidden aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="modeText"></span><button id="teachDone" class="btn small primary" type="button" hidden>Done</button></div>
       <div class="replaybar floatbar" id="replayBar" hidden role="group" aria-label="Replay">
+        <span class="rp-title" id="rpTitle">Last session</span>
         <button id="rpBack" class="btn small" type="button" aria-label="Back 5 seconds">−5 s</button>
         <button id="rpPlay" class="btn small" type="button" aria-pressed="true">Pause</button>
         <button id="rpFwd" class="btn small" type="button" aria-label="Forward 5 seconds">+5 s</button>
         <input id="rpSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Position in the recording">
         <span id="rpTime" class="rp-time">0:00 / 0:00</span>
+        <button id="rpKeep" class="btn small" type="button" hidden>Keep this take</button>
         <button id="rpClose" class="btn small primary" type="button">Done</button>
       </div>
       <div class="markbar floatbar" id="markBar" hidden role="toolbar" aria-label="Markings">
@@ -203,6 +204,7 @@
         <span id="hearTime" class="rp-time">bar 1</span>
         <button id="hearClose" class="btn small primary" type="button">Done</button>
       </div>
+      <div class="zoom-chip" id="zoomChip" hidden><span id="zoomText">100%</span><button id="zoomReset" class="btn small" type="button" aria-label="Back to the whole page">Whole page</button></div>
       <button id="unlockBtn" class="unlock" type="button" hidden aria-label="Hold to unlock"><svg class="i"><use href="#i-lock"/></svg><span>Hold to unlock</span></button>
       <div class="sheet" id="sheet"></div>
       <div class="status" id="status" hidden><span id="statusText"></span></div>
@@ -253,6 +255,14 @@
       </div>
       <p class="note">The passages where you hesitated, missed notes or slowed down in recent sessions, worst first. Tap one to loop it with the metronome a little slower; each clean time steps the tempo up.</p>
       <div id="troubleBody"></div>
+    </aside>
+
+    <aside class="panel side" id="takesPanel" aria-label="Kept takes" hidden>
+      <div class="panel-head">
+        <div><p class="eyebrow">Practice</p><h2>Kept takes</h2></div>
+        <button class="btn icon flat panel-close" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="takesBody"></div>
     </aside>
 
     <aside class="panel library pages-panel" id="pagesPanel" aria-label="Edit pages" hidden>
@@ -312,8 +322,8 @@
         <p class="note" id="aboutText">ScoreAtlas · everything stays on this iPad.</p>
         <div class="actions">
           <button id="tourAgain" class="btn small" type="button">Show the welcome tour</button>
-          <a class="btn small" href="privacy.html" target="_blank" rel="noopener">Privacy</a>
-          <a class="btn small" href="support.html" target="_blank" rel="noopener">Support</a>
+          <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/privacy.html" target="_blank" rel="noopener">Privacy</a>
+          <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/support.html" target="_blank" rel="noopener">Support</a>
         </div>
       </section>
     </aside>
@@ -335,7 +345,7 @@
         <ul>
           <li><b>From MuseScore.com:</b> download the piece as MusicXML.</li>
           <li><b>From your own scan:</b> open the PDF in the free Audiveris app on a Mac or PC, let it read the music, and export MusicXML (.mxl).</li>
-          <li><b>Easiest, with a Mac:</b> the <b>ScoreAtlas Reader</b> helper (download it from <a href="mac/ScoreAtlas-Reader.zip">this link</a> on the Mac, unzip, double-click the installer once). Drop PDFs onto it; each PDF and its sheet music appear in the ScoreAtlas folder in iCloud Drive.</li>
+          <li><b>Easiest, with a Mac:</b> the <b>ScoreAtlas Reader</b> helper (download it from <a href="https://godisgood-code.github.io/ScoreAtlas/mac/ScoreAtlas-Reader.zip" target="_blank" rel="noopener">godisgood-code.github.io/ScoreAtlas/mac/ScoreAtlas-Reader.zip</a> on the Mac, unzip, double-click the installer once). Drop PDFs onto it; each PDF and its sheet music appear in the ScoreAtlas folder in iCloud Drive.</li>
           <li>On the iPad: <b>Library → Add music</b>, pick the PDF and its .mxl together (several pieces at once is fine). Or, for the open piece, <b>Piece → Add sheet music</b>.</li>
           <li><b>Sheet music options</b>: tick only the parts you play (a choir or orchestra part is left out), type the page the music starts on (one movement of a longer PDF), or the first bar of each page if the file came from a different edition.</li>
         </ul>
@@ -351,6 +361,7 @@
           <li><b>Trouble spots</b>: the passages where you hesitated, slowed down or missed notes lately. Tap one: it loops with the metronome a little slower, and each clean time steps the tempo up.</li>
           <li><b>Hands</b>: Left or Right, and Follow listens for that hand only (and Hear the music plays it).</li>
           <li><b>Hear the music</b>: plays the sheet music from the page on screen with the bar highlighted; drag Speed to slow it down.</li>
+          <li><b>Keep this take</b> (in the practice report, or while listening back) saves the session's recording with the piece; <b>Kept takes</b> plays them back with the highlight, or shares them as sound files.</li>
           <li><b>Metronome</b>: tap the number to type a tempo, or Tap tempo; pick any time signature and 1–4 clicks a beat. With a loop, the tempo ladder speeds up after each clean time.</li>
           <li>Tap <b>Stop</b> for the <b>practice report</b>: bars you practiced most, where you hesitated, your tempo bar by bar. <b>Listen back</b> plays your session with the pages following.</li>
           <li><b>Check my notes</b> (in the report, with sheet music): listens to the session for missed and wrong notes and marks those bars in red. It takes a little while and works without Wi-Fi. <b>Not in my music</b> stops a note from being checked (for notes the sheet music reader added by mistake). The <b>Practice journal</b> shows your notes over time.</li>
@@ -367,15 +378,17 @@
         <ul>
           <li><b>View</b>: two pages side by side when the iPad is sideways; half-page turns; <b>Lock for performing</b> (only the pedal turns pages; hold the lock button to unlock).</li>
           <li>A Bluetooth page-turn pedal works as forward and back. Tap the right side of the page to go forward, the left side to go back, or swipe.</li>
+          <li><b>Pinch to zoom</b> with two fingers; while zoomed in, one finger moves the page around (taps still turn pages). <b>Whole page</b> at the bottom right goes back.</li>
         </ul>
       </details>
-      <details><summary>Offline and the Home Screen</summary>
+      <details class="web-only"><summary>Offline and the Home Screen</summary>
         <p>After loading once with Wi-Fi, ScoreAtlas works without it. For an app icon: <b>Share → Add to Home Screen</b>.</p>
       </details>
       <details><summary>Something isn't working</summary>
         <ul>
           <li><b>No pages turn:</b> the piece needs sheet music or one taught playthrough (see Piece).</li>
-          <li><b>The microphone is off:</b> in Safari, tap <b>aA → Website Settings → Microphone → Allow</b>, then reload. <b>Piece → Check microphone</b> shows the notes it hears.</li>
+          <li class="web-only"><b>The microphone is off:</b> in Safari, tap <b>aA → Website Settings → Microphone → Allow</b>, then reload. <b>Piece → Check microphone</b> shows the notes it hears.</li>
+          <li class="app-only"><b>The microphone is off:</b> open the iPad's <b>Settings → ScoreAtlas</b> and turn on <b>Microphone</b>. <b>Piece → Check microphone</b> shows the notes it hears.</li>
           <li><b>Turns feel late or early:</b> <b>Settings → Turn pages</b>.</li>
           <li><b>It loses you in a passage:</b> turn to the page you're playing (it then stays there), or teach just that passage (<b>Piece → Teach</b>); taught sections are used where they fit better.</li>
           <li><b>Check my notes flags a note you played:</b> very soft notes can go unheard, and the sheet music reader sometimes misreads a note. If the same note is flagged every time, the reading is probably wrong there.</li>
@@ -464,7 +477,13 @@
       </section>
 
       <details class="group whatsnew">
-        <summary>What's new in Test 16</summary>
+        <summary>What's new in Test 17</summary>
+        <ol>
+          <li><b>Pinch to zoom</b>: two fingers on the music zoom in; one finger moves the page around; <b>Whole page</b> (bottom right) goes back. Pages turn as usual and show from their top.</li>
+          <li><b>Keep this take</b>: after a session, keep its recording with the piece (in the practice report, or while listening back). <b>Practice → Kept takes</b>: play them with the bar highlighted, rename, share or delete.</li>
+          <li>The typefaces are now built in (no internet needed), ready for the App Store version.</li>
+        </ol>
+        <p class="note">From Test 16:</p>
         <ol>
           <li><b>Practice menu</b> (top bar): loops, trouble spots, hands, hearing the music, the metronome, your report and journal, all in one place.</li>
           <li><b>Trouble spots</b>: the bars you stumble on, looped one at a time with the metronome, faster each clean time.</li>

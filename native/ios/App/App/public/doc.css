@@ -1,0 +1,13 @@
+/* Privacy policy and support pages */
+:root { --bg: #e9e6e0; --paper: #fff; --ink: #1d1b18; --muted: #6b665e; --brass: #8a6a1f; --line: #ddd8cf; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg: #111214; --paper: #1b1c20; --ink: #ecebe7; --muted: #a29d94; --brass: #d8b45f; --line: #34353b; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif; }
+.doc { max-width: 720px; margin: 24px auto; padding: 32px 28px; background: var(--paper); border-radius: 18px; }
+@media (max-width: 760px) { .doc { margin: 0; border-radius: 0; padding: 24px 16px; } }
+h1 { font: 600 34px/1.15 Georgia, serif; margin: 0 0 6px; }
+h2 { font-size: 19px; margin: 28px 0 6px; }
+.eyebrow { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--brass); }
+.updated { color: var(--muted); margin-top: 0; }
+a { color: var(--brass); }
+details { border-top: 1px solid var(--line); padding: 10px 0; }
+summary { cursor: pointer; font-weight: 700; }

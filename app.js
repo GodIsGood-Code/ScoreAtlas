@@ -25,6 +25,10 @@ import { PracticeLog, busiestPassages } from "./engine/practice.js";
 import { Recorder } from "./engine/recorder.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
+// Running as the App Store app (Capacitor, see native/): a few things go through the app instead of the browser
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const native = (msg) => { try { window.webkit.messageHandlers.scoreAtlas.postMessage(msg); } catch { /* not in the app */ } };
+if (NATIVE) document.documentElement.classList.add("native");
 const SAMPLE = { url: "samples/warm-ups.pdf", name: "Sample: Warm-ups" };
 
 const $ = (id) => document.getElementById(id);
@@ -53,6 +57,8 @@ let heatOn = true;
 const modebar = $("modebar"), modeText = $("modeText"), progress = $("progress"), progressFill = $("progressFill");
 
 const state = { pdf: null, page: 1, count: 0, cache: new Map(), layout: "", name: "", key: null, lesson: null };
+const zoom = { z: 1, x: 0, y: 0, res: 1 }; // pinch to zoom: scale, shift (screen pixels), resolution the pages are drawn at
+const ZOOM_MAX = 4;
 let mode = "idle"; // idle, teach, follow or replay
 let locked = false; // performance lock: taps and Pencil do nothing, only the pedal turns pages
 let marksKey = null; // the piece the markings belong to
@@ -118,6 +124,7 @@ async function openPdf(data, name) {
   const old = state.pdf;
   dropCache(() => true);
   Object.assign(state, { pdf, count: pdf.numPages, page: 1, name, lesson: null });
+  zoom.z = 1; zoom.x = 0; zoom.y = 0; zoom.res = 1; applyZoom(); state.layout = layoutKey();
   state.key = `${(pdf.fingerprints && pdf.fingerprints[0]) || name}:${pdf.numPages}`;
   fileName.textContent = name.replace(/\.pdf$/i, "");
   fileName.title = name;
@@ -186,7 +193,7 @@ const spreadStart = (n) => (n % 2 ? n : n - 1);
 
 function layoutKey() {
   const r = stand.getBoundingClientRect();
-  return `${Math.round(r.width)}x${Math.round(r.height)}@${window.devicePixelRatio || 1}${isTwoUp() ? "|2" : ""}${view.crop ? "|crop" : ""}`;
+  return `${Math.round(r.width)}x${Math.round(r.height)}@${window.devicePixelRatio || 1}${isTwoUp() ? "|2" : ""}${view.crop ? "|crop" : ""}${zoom.res > 1 ? `|z${zoom.res}` : ""}`;
 }
 
 function render(n) {
@@ -202,7 +209,7 @@ function render(n) {
     const r = stand.getBoundingClientRect();
     const w = Math.max(80, two ? (r.width - 36) / 2 : r.width - 24), h = Math.max(80, r.height - 24);
     const fit = Math.min(w / bw, h / bh);
-    let scale = fit * Math.min(window.devicePixelRatio || 1, 3);
+    let scale = fit * Math.min(window.devicePixelRatio || 1, 3) * zoom.res;
     const maxPixels = 16e6; // iPad Safari refuses canvases larger than about 16.7 million pixels
     if (bw * bh * scale * scale > maxPixels) scale = Math.sqrt(maxPixels / (bw * bh));
     const vp = page.getViewport({ scale, offsetX: -crop.x0 * base.width * scale, offsetY: -crop.y0 * base.height * scale });
@@ -298,7 +305,9 @@ let showToken = 0;
 // opts.half: show the top half of the next page over the bottom half of this one
 async function show(n, opts = {}) {
   if (!state.pdf) return;
+  const before = state.page;
   state.page = Math.max(1, Math.min(state.count, n));
+  const newPage = state.page !== before;
   const two = isTwoUp();
   view.half = !!opts.half && !two && state.page < state.count;
   updateCounter();
@@ -338,6 +347,8 @@ async function show(n, opts = {}) {
   }
   sheet.classList.toggle("two-up", two);
   sheet.classList.toggle("dark-pages", !!view.darkPages);
+  // zoomed in: a new page shows from its top
+  if (zoom.z > 1.01) { if (newPage) zoom.y = Infinity; clampZoom(); applyZoom(); }
   drawOverlay();
   setStatus(null);
   // Keep the pages around ready so a turn is instant
@@ -584,6 +595,8 @@ window.pageTurner = {
   get hands() { return hands; },
   get hearing() { return hear ? { played: hearPlayed(), speed: hear.speed } : null; },
   get loop() { return loop ? { ...loop } : null; },
+  get zoom() { return { ...zoom }; },
+  get replaying() { return replay ? { title: replay.R.title || "Last session", duration: replay.R.duration } : null; },
 };
 
 function onFrame(frame) {
@@ -1006,6 +1019,16 @@ function renderReport() {
     body.append(list);
   }
   // wrong-note detection: listen to the session's recording for missed and wrong notes
+  if (lastRecording && lastRecording.log === r.log) {
+    const kb = el("button", "btn small", lastRecording.kept ? "Take kept ✓" : "Keep this take");
+    kb.type = "button";
+    kb.id = "keepTakeBtn";
+    kb.disabled = !!lastRecording.kept;
+    kb.addEventListener("click", () => keepTake());
+    const row = el("div", "actions");
+    row.append(kb);
+    body.append(row);
+  }
   const canCheck = lastRecording && lastRecording.log === r.log && sec.scoreFile;
   if (canCheck || r.notecheck) {
     body.append(el("h3", null, "Notes"));
@@ -1211,19 +1234,21 @@ function keepRecording() {
 }
 
 // Play the last session from `at` seconds into it
-function startReplay(at = 0) {
-  const R = lastRecording;
+function startReplay(at = 0, R = lastRecording) {
   if (!R || (mode !== "idle" && mode !== "replay")) return;
+  if (replay && replay.R !== R) stopReplay();
   if (!replay) {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     const ctx = new Ctx();
     const buf = ctx.createBuffer(1, R.samples.length, R.rate);
     buf.getChannelData(0).set(R.samples);
-    replay = { ctx, buf, src: null, playing: false, offset: 0, t0: 0, raf: 0, lastM: -1, lastSeen: -1 };
+    replay = { ctx, buf, src: null, playing: false, offset: 0, t0: 0, raf: 0, lastM: -1, lastSeen: -1, R };
   }
   mode = "replay";
   replayBar.hidden = false;
   rpSeek.max = String(R.duration);
+  $("rpKeep").hidden = R !== lastRecording || !!R.kept;
+  $("rpTitle").textContent = R.title || "Last session";
   updateButtons();
   playFrom(at);
 }
@@ -1239,7 +1264,7 @@ function stopSource() {
 }
 
 function playFrom(at) {
-  const r = replay, R = lastRecording;
+  const r = replay, R = replay.R;
   stopSource();
   at = Math.max(0, Math.min(R.duration - 0.05, at));
   const src = r.ctx.createBufferSource();
@@ -1256,7 +1281,7 @@ function pauseReplay() {
   const r = replay;
   if (!r) return;
   if (r.playing) { r.offset = replayNow(); stopSource(); r.playing = false; drawReplay(); }
-  else playFrom(r.offset >= lastRecording.duration - 0.1 ? 0 : r.offset);
+  else playFrom(r.offset >= r.R.duration - 0.1 ? 0 : r.offset);
 }
 
 function tickReplay() {
@@ -1269,12 +1294,17 @@ function tickReplay() {
 
 // The bar being played at this moment of the recording (from where the follower was), and the page showing
 function drawReplay() {
-  const r = replay, R = lastRecording;
+  const r = replay;
   if (!r) return;
+  const R = r.R;
   const t = replayNow(), at = R.startTime + t;
   let m = -1;
   const log = R.log, sec = R.sec;
-  if (log && sec && sec.layout && log.n) {
+  if (R.track && sec && sec.layout) {
+    // a kept take: the bar at each tenth of a second, worked out when it was kept
+    const k = Math.min(R.track.length - 1, Math.max(0, Math.floor(t * 10)));
+    m = R.track[k] >= 0 && sec.layout[R.track[k]] ? R.track[k] : -1;
+  } else if (log && sec && sec.layout && log.n) {
     // the last frame at or before this moment, then back over a moment the follower wasn't sure (up to 1.5 s)
     let lo = 0, hi = log.n - 1;
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (log.time[mid] <= at) lo = mid; else hi = mid - 1; }
@@ -1307,7 +1337,7 @@ function stopReplay() {
 
 rpPlay.addEventListener("click", () => { pauseReplay(); backToMusic(); });
 $("rpBack").addEventListener("click", () => { if (replay) { const t = replayNow() - 5; replay.playing ? playFrom(t) : ((replay.offset = Math.max(0, t)), drawReplay()); } });
-$("rpFwd").addEventListener("click", () => { if (replay) { const t = replayNow() + 5; replay.playing ? playFrom(t) : ((replay.offset = Math.min(lastRecording.duration, t)), drawReplay()); } });
+$("rpFwd").addEventListener("click", () => { if (replay) { const t = replayNow() + 5; replay.playing ? playFrom(t) : ((replay.offset = Math.min(replay.R.duration, t)), drawReplay()); } });
 rpSeek.addEventListener("input", () => {
   if (!replay) return;
   const t = Number(rpSeek.value);
@@ -1322,6 +1352,111 @@ function replayFromClock(t) {
   if (!lastRecording) return;
   startReplay(Math.max(0, t - lastRecording.startTime - 1));
 }
+
+/* ---------- Kept takes: recordings saved with the piece, to listen to later (auditions, lessons, progress) ---------- */
+// Kept as 16,000 samples a second, 16-bit (about 2 MB a minute), with the bar being played every tenth of a second
+// (from where the follower was), so a take plays back with the highlight and the pages following.
+function barTrack(R) {
+  const n = Math.ceil(R.duration * 10), track = new Int16Array(n).fill(-1);
+  const log = R.log;
+  if (!log || !log.n) return track;
+  let i = 0;
+  for (let k = 0; k < n; k++) {
+    const at = R.startTime + k / 10;
+    while (i + 1 < log.n && log.time[i + 1] <= at) i++;
+    for (let j = i; j >= 0 && j > i - 75; j--) if (log.pos[j] >= 0) { track[k] = log.lesson.measure[log.pos[j]]; break; }
+  }
+  return track;
+}
+const takeKey = (key, id) => `${key}|take|${id}`;
+async function keepTake() {
+  const R = lastRecording, key = state.key;
+  if (!R || !key || R.kept) return;
+  const samples = new Int16Array(R.samples.length);
+  for (let i = 0; i < samples.length; i++) samples[i] = Math.max(-32768, Math.min(32767, Math.round(R.samples[i] * 32767)));
+  const id = Date.now();
+  const when = new Date(id).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const take = { id, name: `Take, ${when}`, date: id, rate: R.rate, duration: R.duration, startTime: R.startTime, samples, track: barTrack(R), turns: R.turns, firstPage: R.firstPage, hand: sessionHands };
+  try {
+    await saveLesson(takeKey(key, id), take);
+    const list = ((await loadLesson(`${key}|takes`)) || {}).list || [];
+    list.push({ id, name: take.name, date: id, duration: R.duration });
+    await saveLesson(`${key}|takes`, { list });
+    R.kept = true;
+    $("rpKeep").hidden = true;
+    renderReport();
+    toast(`Kept: ${clock(R.duration)} (Practice → Kept takes)`, 2600);
+  } catch {
+    toast("Couldn't keep the take: the iPad may be out of space.", 3500);
+  }
+}
+async function showTakes() {
+  openPanel("takesPanel");
+  const body = $("takesBody");
+  body.textContent = "";
+  const key = state.key;
+  const list = key ? ((await loadLesson(`${key}|takes`)) || {}).list || [] : [];
+  if (!list.length) {
+    body.append(el("p", "note", "No takes kept for this piece yet. After practicing with Follow, tap Keep this take in the practice report (or while listening back)."));
+    return;
+  }
+  const total = list.reduce((n, t) => n + t.duration, 0);
+  body.append(el("p", "note", `${plural(list.length, "take")}, ${clock(total)} in all (about ${Math.max(1, Math.round((total * 32) / 1024))} MB on this iPad).`));
+  const ul = el("ul", "takes-list");
+  for (const t of [...list].sort((a, b) => b.date - a.date)) {
+    const li = el("li");
+    const info = el("div", "take-info");
+    info.append(el("b", null, t.name), el("span", null, `${clock(t.duration)} · ${new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`));
+    const acts = el("div", "lib-actions");
+    const btn = (text, cls, fn, label) => { const b = el("button", `btn small ${cls}`, text); b.type = "button"; if (label) b.setAttribute("aria-label", label); b.addEventListener("click", fn); return b; };
+    acts.append(
+      btn("Play", "primary", () => playTake(t.id), `Play ${t.name}`),
+      btn("Share", "", () => shareTake(t.id)),
+      btn("Rename", "", async () => {
+        const name = window.prompt("Name for this take:", t.name);
+        if (!name || !name.trim()) return;
+        t.name = name.trim();
+        await saveLesson(`${key}|takes`, { list });
+        const full = await loadLesson(takeKey(key, t.id));
+        if (full) { full.name = t.name; await saveLesson(takeKey(key, t.id), full); }
+        showTakes();
+      }),
+      btn("Delete", "quiet", async (e) => {
+        const b = e.currentTarget;
+        if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Delete"; }, 3000); return; }
+        await forgetLesson(takeKey(key, t.id)).catch(() => {});
+        await saveLesson(`${key}|takes`, { list: list.filter((x) => x !== t) });
+        showTakes();
+      }),
+    );
+    li.append(info, acts);
+    ul.append(li);
+  }
+  body.append(ul);
+}
+async function loadTake(id) {
+  const t = await loadLesson(takeKey(state.key, id));
+  if (!t) { toast("That take isn't on this iPad any more", 2500); return null; }
+  const samples = new Float32Array(t.samples.length);
+  for (let i = 0; i < samples.length; i++) samples[i] = t.samples[i] / 32768;
+  return { ...t, samples, sec: scoreSectionOf(), title: t.name, kept: true };
+}
+async function playTake(id) {
+  if (mode !== "idle" && mode !== "replay") { toast("Stop following first", 1800); return; }
+  const R = await loadTake(id);
+  if (!R) return;
+  closePanels();
+  if (replay) stopReplay();
+  startReplay(0, R);
+}
+async function shareTake(id) {
+  const R = await loadTake(id);
+  if (!R) return;
+  await shareFile(wavFile(R.samples, R.rate), `${fileName.textContent} - ${R.name.replace(/[\\/:*?"<>|]+/g, " ")}.wav`, "audio/wav");
+}
+$("takesBtn").addEventListener("click", () => showTakes());
+$("rpKeep").addEventListener("click", () => keepTake());
+makeMovable($("takesPanel"), $("takesPanel").querySelector(".panel-head"), "pt-takes-place");
 
 const breathe = () => new Promise((r) => setTimeout(r, 30)); // let the screen update between long steps
 
@@ -1690,7 +1825,7 @@ document.addEventListener("pointerdown", (e) => {
   if (!practiceMenu.hidden && !practiceMenu.contains(e.target) && !$("practiceBtn").contains(e.target)) { practiceMenu.hidden = true; $("practiceBtn").setAttribute("aria-expanded", "false"); }
 });
 // the menu's buttons do their thing and close it
-for (const id of ["loopBtn", "troubleBtn", "hearBtn", "openMetro", "reportBtn", "replayCardBtn", "journalBtn"]) {
+for (const id of ["loopBtn", "troubleBtn", "hearBtn", "openMetro", "reportBtn", "replayCardBtn", "journalBtn", "takesBtn"]) {
   $(id).addEventListener("click", () => { practiceMenu.hidden = true; $("practiceBtn").setAttribute("aria-expanded", "false"); });
 }
 
@@ -1786,7 +1921,7 @@ $("setHighlight").addEventListener("change", (e) => { settings.highlight = e.tar
 $("setAwake").addEventListener("change", (e) => {
   settings.awake = e.target.checked;
   saveSettings();
-  if (settings.awake) keepAwake();
+  if (settings.awake || NATIVE) keepAwake();
   else if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 });
 for (const b of $("themeChoice").querySelectorAll("button")) b.addEventListener("click", () => {
@@ -2190,6 +2325,11 @@ const pageEditor = new PageEditor($("pagesPanel"), {
     }
     if (practiced && !asCopy) await saveLesson(`${key}|practice`, practiced);
     if (!asCopy) {
+      const takes = ((await loadLesson(`${oldKey}|takes`)) || {}).list || [];
+      for (const t of takes) { const full = await loadLesson(`${oldKey}|take|${t.id}`); if (full) await saveLesson(`${key}|take|${t.id}`, full); }
+      if (takes.length) await saveLesson(`${key}|takes`, { list: takes });
+    }
+    if (!asCopy) {
       const lists = await loadSetlists();
       for (const sl of lists) sl.items = sl.items.map((k) => (k === oldKey ? key : k));
       await saveSetlists(lists);
@@ -2246,6 +2386,20 @@ async function addFiles(files) {
   if (added + scores > 1) toast(`Added ${plural(added, "piece")}${scores ? ` (${scores} with sheet music)` : ""}`, 3200);
   if (plan.other.length) toast(`Skipped ${plan.other.map((f) => f.name).join(", ")}: not a PDF, MusicXML or ScoreAtlas file`, 3500);
 }
+
+// The App Store app: a file opened with ScoreAtlas from Files, AirDrop or Mail (the app hands over where it is)
+window.scoreAtlasOpen = async (url, name) => {
+  try {
+    const res = await fetch(window.Capacitor.convertFileSrc(url));
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await addFiles([new File([bytes], name)]);
+    return true;
+  } catch (err) {
+    toast(`Couldn't open ${name}: ${err.message || err}`, 3500);
+    return false;
+  }
+};
+if (NATIVE) native({ ready: true });
 
 /* ---------- Practice journal ---------- */
 $("journalBtn").addEventListener("click", async () => {
@@ -2513,6 +2667,91 @@ window.addEventListener("keydown", (e) => {
   else if (PREV.has(e.key)) turn(-1);
 });
 
+/* ---------- Pinch to zoom (two fingers; one finger moves the page around while zoomed in) ---------- */
+function applyZoom() {
+  const on = zoom.z > 1.01;
+  sheet.style.transform = on ? `translate(${zoom.x.toFixed(1)}px, ${zoom.y.toFixed(1)}px) scale(${zoom.z.toFixed(3)})` : "";
+  sheet.classList.toggle("zoomed", on);
+  $("zoomChip").hidden = !on;
+  $("zoomText").textContent = `${Math.round(zoom.z * 100)}%`;
+}
+// keep the zoomed music covering the screen (no empty space past its edges)
+function clampZoom() {
+  const r = stand.getBoundingClientRect(), W = sheet.offsetWidth, H = sheet.offsetHeight;
+  const mx = Math.max(0, (zoom.z * W - (r.width - 24)) / 2), my = Math.max(0, (zoom.z * H - (r.height - 24)) / 2);
+  zoom.x = Math.max(-mx, Math.min(mx, zoom.x));
+  zoom.y = Math.max(-my, Math.min(my, zoom.y));
+}
+// the middle of the music when not zoomed (zooming is around it)
+const sheetCenter = () => { const r = stand.getBoundingClientRect(); return { x: r.left + sheet.offsetLeft + sheet.offsetWidth / 2, y: r.top + sheet.offsetTop + sheet.offsetHeight / 2 }; };
+// zoom to z keeping the point (fx, fy) of the screen where it was, starting from (z0, x0, y0) with that point at (f0x, f0y)
+function zoomTo(z, fx, fy, from = { z: zoom.z, x: zoom.x, y: zoom.y, fx, fy }) {
+  z = Math.max(1, Math.min(ZOOM_MAX, z));
+  const c = sheetCenter(), k = z / from.z;
+  zoom.z = z;
+  zoom.x = fx - c.x - k * (from.fx - c.x - from.x);
+  zoom.y = fy - c.y - k * (from.fy - c.y - from.y);
+  if (z <= 1.01) { zoom.z = 1; zoom.x = 0; zoom.y = 0; }
+  clampZoom();
+  applyZoom();
+  sharpenLater();
+}
+// once the fingers stop: draw the pages again at a resolution fit for the zoom
+let sharpenTimer = 0;
+function sharpenLater() {
+  clearTimeout(sharpenTimer);
+  sharpenTimer = setTimeout(() => {
+    const z = zoom.z, res = z <= 1.05 ? 1 : z <= 1.6 ? 1.5 : z <= 2.2 ? 2 : z <= 3.2 ? 3 : 4;
+    if (res === zoom.res) return;
+    zoom.res = res;
+    state.layout = layoutKey();
+    show(state.page, { half: view.half });
+  }, 300);
+}
+function resetZoom() { zoom.z = 1; zoom.x = 0; zoom.y = 0; applyZoom(); sharpenLater(); }
+$("zoomReset").addEventListener("click", () => { resetZoom(); backToMusic(); });
+const touches = new Map();
+let pinch = null, panning = null;
+const isControl = (e) => e.target.closest && e.target.closest("button, input, label, textarea, select, .floatbar, .unlock, .modebar, .note-input");
+stand.addEventListener("pointerdown", (e) => {
+  if (isControl(e)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2 && !marks.markMode && !locked) {
+    const [a, b] = [...touches.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, from: { z: zoom.z, x: zoom.x, y: zoom.y, fx: (a.x + b.x) / 2, fy: (a.y + b.y) / 2 } };
+    down = null; // not a tap or a swipe
+    panning = null;
+  } else if (touches.size === 1 && zoom.z > 1.01 && !marks.markMode && !locked) {
+    panning = { x: e.clientX, y: e.clientY, x0: zoom.x, y0: zoom.y };
+  }
+}, true);
+stand.addEventListener("pointermove", (e) => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && touches.size >= 2) {
+    const [a, b] = [...touches.values()];
+    zoomTo(pinch.from.z * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d), (a.x + b.x) / 2, (a.y + b.y) / 2, pinch.from);
+  } else if (panning && touches.size === 1) {
+    zoom.x = panning.x0 + (e.clientX - panning.x);
+    zoom.y = panning.y0 + (e.clientY - panning.y);
+    clampZoom();
+    applyZoom();
+  }
+}, true);
+const lift = (e) => {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = null;
+  if (!touches.size) panning = null;
+};
+stand.addEventListener("pointerup", lift, true);
+stand.addEventListener("pointercancel", lift, true);
+// a trackpad pinch (or Ctrl and the scroll wheel) on a computer
+stand.addEventListener("wheel", (e) => {
+  if (!e.ctrlKey || locked) return;
+  e.preventDefault();
+  zoomTo(zoom.z * Math.exp(-e.deltaY / 150), e.clientX, e.clientY);
+}, { passive: false });
+
 /* ---------- Taps and swipes ---------- */
 let down = null;
 stand.addEventListener("pointerdown", (e) => {
@@ -2526,6 +2765,7 @@ stand.addEventListener("pointerup", (e) => {
   if (!down || e.pointerId !== down.id) return;
   const dx = e.clientX - down.x, dy = e.clientY - down.y, dt = performance.now() - down.t;
   down = null;
+  if (zoom.z > 1.01 && Math.hypot(dx, dy) >= 14) return; // moving the zoomed page, not a swipe
   if (!settings.tapTurns && !loopPick) return;
   if (Math.abs(dx) > 40 && Math.abs(dx) > 1.5 * Math.abs(dy)) return turn(dx < 0 ? 1 : -1);
   if (Math.hypot(dx, dy) < 14 && dt < 600 && loopPick) return pickLoopBar(e.clientX, e.clientY);
@@ -2543,7 +2783,7 @@ $("nextBtn").addEventListener("click", () => { turn(1); backToMusic(); });
 $("libraryBtn").addEventListener("click", () => { closePanels("library"); library.open(); });
 // Only one panel at a time (and the View menu closes too)
 function closePanels(except) {
-  for (const id of ["settingsPanel", "helpPanel", "journalPanel", "troublePanel"]) if (except !== id) $(id).hidden = true;
+  for (const id of ["settingsPanel", "helpPanel", "journalPanel", "troublePanel", "takesPanel"]) if (except !== id) $(id).hidden = true;
   if (except !== "pages" && pageEditor.isOpen) pageEditor.close();
   practiceMenu.hidden = true;
   $("practiceBtn").setAttribute("aria-expanded", "false");
@@ -2561,6 +2801,7 @@ window.addEventListener("keydown", (e) => {
   else if (!viewMenu.hidden) viewMenu.hidden = true;
   else if (pageEditor.isOpen) pageEditor.close();
   else if (!$("troublePanel").hidden) $("troublePanel").hidden = true;
+  else if (!$("takesPanel").hidden) $("takesPanel").hidden = true;
   else if (!$("tour").hidden) endTour();
   else if (!$("settingsPanel").hidden) $("settingsPanel").hidden = true;
   else if (!$("helpPanel").hidden) $("helpPanel").hidden = true;
@@ -2590,6 +2831,7 @@ try { if (localStorage.getItem("pt-steps-hidden") === "1") setCard(false); } cat
 /* ---------- Keep the screen on while the music is up ---------- */
 let wakeLock = null;
 async function keepAwake() {
+  if (NATIVE) { native({ keepAwake: !!settings.awake }); return; } // the App Store app keeps the screen on itself
   if (!settings.awake || wakeLock || !("wakeLock" in navigator) || document.visibilityState !== "visible") return;
   try {
     wakeLock = await navigator.wakeLock.request("screen");

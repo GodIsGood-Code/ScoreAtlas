@@ -1,0 +1,325 @@
+// Markings on the music with Apple Pencil or a finger, while "Mark" is on (so nothing is marked by accident): a pen in
+// any color and size, a highlighter, text notes, stamps (dynamics, accents, fermata, breath marks, pedal marks),
+// fingering numbers, an eraser that removes whole markings, and undo. Markings are kept as points relative to the
+// page (0..1 across and down), so they stay in place at any size, in two-page view and in half-page view.
+// While the Pencil is writing, touches from the hand resting on the screen are ignored (they don't turn the page).
+
+export const INKS = { black: "#1a1d21", red: "#c62828", blue: "#1f5fc4" };
+export const HIGHLIGHTS = { yellow: "#ffd200", green: "#7ed957", pink: "#ff7eb6", blue: "#6ec6ff" };
+const HIGHLIGHT = "rgba(255, 210, 0, 0.36)";
+// "#ffd200" -> "rgba(255, 210, 0, 0.36)"
+export const washOf = (hex, a = 0.36) => {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+  return m ? `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${a})` : HIGHLIGHT;
+};
+
+// Stamps: what each one is called (for buttons and reading aloud)
+export const STAMPS = [
+  ["pp", "pianissimo"], ["p", "piano"], ["mp", "mezzo piano"], ["mf", "mezzo forte"], ["f", "forte"], ["ff", "fortissimo"],
+  ["sfz", "sforzando"], ["cresc", "crescendo"], ["dim", "diminuendo"], ["accent", "accent"], ["staccato", "staccato"],
+  ["tenuto", "tenuto"], ["fermata", "fermata"], ["breath", "breath mark"], ["caesura", "caesura"], ["ped", "pedal down"],
+  ["release", "pedal up"], ["circle", "circle"], ["check", "check mark"], ["eyes", "watch (glasses)"],
+];
+
+// Draws a stamp centered at (x, y); u: its size in pixels (about a staff space and a half)
+export function drawStamp(ctx, k, x, y, u, color) {
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = color;
+  ctx.lineCap = ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, u * 0.09);
+  const line = (pts) => { ctx.beginPath(); pts.forEach(([a, b], i) => (i ? ctx.lineTo(x + a * u, y + b * u) : ctx.moveTo(x + a * u, y + b * u))); ctx.stroke(); };
+  const dyn = (text) => {
+    ctx.font = `italic 700 ${Math.round(u * 1.25)}px "Times New Roman", Georgia, serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  };
+  switch (k) {
+    case "pp": case "p": case "mp": case "mf": case "f": case "ff": case "sfz": dyn(k); break;
+    case "cresc": line([[1.6, -0.45], [-1.6, 0], [1.6, 0.45]]); break;
+    case "dim": line([[-1.6, -0.45], [1.6, 0], [-1.6, 0.45]]); break;
+    case "accent": line([[-0.55, -0.3], [0.55, 0], [-0.55, 0.3]]); break;
+    case "staccato": ctx.beginPath(); ctx.arc(x, y, u * 0.14, 0, 2 * Math.PI); ctx.fill(); break;
+    case "tenuto": ctx.lineWidth = Math.max(1, u * 0.13); line([[-0.5, 0], [0.5, 0]]); break;
+    case "fermata":
+      ctx.beginPath(); ctx.arc(x, y + u * 0.35, u * 0.8, Math.PI, 2 * Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y + u * 0.15, u * 0.13, 0, 2 * Math.PI); ctx.fill(); break;
+    case "breath":
+      ctx.beginPath(); ctx.arc(x, y - u * 0.25, u * 0.18, 0, 2 * Math.PI); ctx.fill();
+      line([[0.12, -0.2], [0.05, 0.3], [-0.2, 0.55]]); break;
+    case "caesura": ctx.lineWidth = Math.max(1, u * 0.13); line([[-0.35, 0.5], [0, -0.5]]); line([[0.05, 0.5], [0.4, -0.5]]); break;
+    case "ped":
+      ctx.font = `italic 700 ${Math.round(u * 1.05)}px "Times New Roman", Georgia, serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("Ped.", x, y); break;
+    case "release":
+      for (let i = 0; i < 4; i++) { const a = (i * Math.PI) / 4; line([[-0.45 * Math.cos(a), -0.45 * Math.sin(a)], [0.45 * Math.cos(a), 0.45 * Math.sin(a)]]); }
+      ctx.beginPath(); ctx.arc(x, y, u * 0.16, 0, 2 * Math.PI); ctx.stroke(); break;
+    case "circle": ctx.beginPath(); ctx.ellipse(x, y, u * 1.3, u * 0.9, 0, 0, 2 * Math.PI); ctx.stroke(); break;
+    case "check": line([[-0.5, 0], [-0.15, 0.4], [0.55, -0.45]]); break;
+    case "eyes":
+      ctx.beginPath(); ctx.arc(x - u * 0.4, y, u * 0.3, 0, 2 * Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + u * 0.4, y, u * 0.3, 0, 2 * Math.PI); ctx.stroke();
+      line([[-0.1, -0.05], [0.1, -0.05]]); break;
+    default: dyn(k);
+  }
+  ctx.restore();
+}
+
+export class Marks {
+  // save(data): called (a moment after) each change; enabled(): whether drawing is allowed now (not locked, say)
+  constructor({ save, enabled = () => true } = {}) {
+    this.pages = {};
+    this.layers = new Map(); // page -> its canvas on screen
+    this.tool = { kind: "pen", color: INKS.black }; // kind: pen, highlight, text, stamp, finger (digit), erase
+    this.hlColor = HIGHLIGHTS.yellow;
+    this.digit = "1";
+    this.stamp = "mf";
+    this.size = 1; // stroke size, 0.3 to 3 (1 is the usual pen)
+    this.onText = null; // (page, x, y, clientX, clientY): the page asks for the words of a text note there
+    this.markMode = false; // fingers draw too
+    this.undoStack = [];
+    this.save = save;
+    this.enabled = enabled;
+    this.active = null;
+    this.lastPen = -1e9;
+    this.saveTimer = 0;
+  }
+
+  load(data) {
+    this.pages = (data && data.pages) || {};
+    this.undoStack = [];
+    for (const page of this.layers.keys()) this.draw(page);
+  }
+
+  data() { return { v: 1, pages: this.pages }; }
+  count() { return Object.values(this.pages).reduce((n, list) => n + list.length, 0); }
+
+  // save at once anything not saved yet (before another piece opens)
+  flush() {
+    if (!this.saveTimer) return;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    if (this.save) this.save(this.data());
+  }
+
+  changed() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => { this.saveTimer = 0; if (this.save) this.save(this.data()); }, 400);
+  }
+
+  // A transparent canvas the size of the page, with this page's markings
+  // crop: the part of the page showing ({ x0, y0, x1, y1 } as page fractions; the whole page if not given)
+  layer(page, w, h, crop) {
+    const c = document.createElement("canvas");
+    c.crop = crop || { x0: 0, y0: 0, x1: 1, y1: 1 };
+    c.className = "marks";
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(w * dpr);
+    c.height = Math.round(h * dpr);
+    c.style.width = `${w}px`;
+    c.style.height = `${h}px`;
+    c.dataset.page = String(page);
+    this.layers.set(page, c);
+    this.draw(page);
+    return c;
+  }
+
+  draw(page) {
+    const c = this.layers.get(page);
+    if (!c) return;
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);
+    for (const s of this.pages[page] || []) this.paintOn(c, s);
+  }
+
+  // paint a stroke on a layer, through the layer's crop
+  paintOn(c, s) {
+    const k = c.crop, ctx = c.getContext("2d");
+    const W = c.width / (k.x1 - k.x0), H = c.height / (k.y1 - k.y0);
+    ctx.save();
+    ctx.translate(-k.x0 * W, -k.y0 * H);
+    this.paint(ctx, s, W, H);
+    ctx.restore();
+  }
+
+  // a page's markings drawn onto any canvas of the whole page (for exporting)
+  drawPageInto(ctx, page, W, H) {
+    for (const s of this.pages[page] || []) this.paint(ctx, s, W, H);
+  }
+
+  paint(ctx, s, W, H) {
+    ctx.save();
+    if (s.t === "stamp") {
+      drawStamp(ctx, s.k, s.x * W, s.y * H, 0.022 * W * (s.z || 1), s.c);
+    } else if (s.t === "note") {
+      ctx.fillStyle = s.c;
+      const px = Math.round(0.02 * W * (s.z || 1));
+      ctx.font = `600 ${px}px "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      String(s.s).split("\n").forEach((ln, i) => ctx.fillText(ln, s.x * W, s.y * H + i * px * 1.2));
+    } else if (s.t === "text") {
+      ctx.fillStyle = s.c;
+      ctx.font = `700 ${Math.round(0.026 * W * Math.sqrt(s.z || 1))}px "Atkinson Hyperlegible", "Helvetica Neue", Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(s.s, s.x * W, s.y * H);
+    } else if (s.t === "hl") {
+      ctx.globalCompositeOperation = "multiply";
+      ctx.strokeStyle = s.c ? washOf(s.c) : HIGHLIGHT;
+      ctx.lineCap = ctx.lineJoin = "round";
+      ctx.lineWidth = s.w * W;
+      ctx.beginPath();
+      for (let i = 0; i < s.p.length; i += 3) (i ? ctx.lineTo : ctx.moveTo).call(ctx, s.p[i] * W, s.p[i + 1] * H);
+      if (s.p.length === 3) ctx.lineTo(s.p[0] * W + 0.1, s.p[1] * H);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = s.c;
+      ctx.fillStyle = s.c;
+      ctx.lineCap = ctx.lineJoin = "round";
+      if (s.p.length === 3) { // a dot
+        ctx.beginPath();
+        ctx.arc(s.p[0] * W, s.p[1] * H, (s.w * W * (0.6 + s.p[2])) / 2, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      for (let i = 3; i < s.p.length; i += 3) {
+        ctx.lineWidth = s.w * W * (0.6 + (s.p[i + 2] + s.p[i - 1]) / 2); // firmer pressure, thicker line
+        ctx.beginPath();
+        ctx.moveTo(s.p[i - 3] * W, s.p[i - 2] * H);
+        ctx.lineTo(s.p[i] * W, s.p[i + 1] * H);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Pencil and finger input on the music
+  attach(root) {
+    const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+    root.addEventListener("pointerdown", (e) => {
+      const pen = e.pointerType === "pen";
+      // the hand resting on the screen while writing: ignore it
+      if (!pen && (this.active || performance.now() - this.lastPen < 600)) { swallow(e); return; }
+      if (!this.enabled() || !this.markMode) return;
+      const unit = e.target.closest && e.target.closest(".page");
+      if (!unit) return;
+      const page = Number(unit.dataset.page);
+      const c = this.layers.get(page);
+      if (!c || !c.isConnected) return;
+      swallow(e);
+      if (pen) this.lastPen = performance.now();
+      const r = c.getBoundingClientRect(), k = c.crop;
+      // where on the page (fractions of the whole page, whatever part of it shows)
+      const at = (ev) => [k.x0 + ((ev.clientX - r.left) / r.width) * (k.x1 - k.x0), k.y0 + ((ev.clientY - r.top) / r.height) * (k.y1 - k.y0), ev.pressure > 0 && ev.pointerType === "pen" ? ev.pressure : 0.5];
+      const scale = { x: r.width / (k.x1 - k.x0), y: r.height / (k.y1 - k.y0) }; // screen pixels per page fraction
+      const [x, y, p] = at(e);
+      if (this.tool.kind === "finger") {
+        this.add(page, { t: "text", s: this.digit, x, y, c: this.tool.color === INKS.black ? INKS.blue : this.tool.color, z: this.size });
+        return;
+      }
+      if (this.tool.kind === "stamp") {
+        this.add(page, { t: "stamp", k: this.stamp, x, y, c: this.tool.color, z: this.size });
+        return;
+      }
+      if (this.tool.kind === "text") {
+        if (this.onText) this.onText(page, x, y, e.clientX, e.clientY);
+        return;
+      }
+      try { root.setPointerCapture(e.pointerId); } catch {}
+      this.active = { id: e.pointerId, page, c, r: scale, at, erased: [] };
+      if (this.tool.kind === "erase") { this.eraseAt(this.active, x, y); return; }
+      const hl = this.tool.kind === "highlight";
+      this.active.stroke = hl ? { t: "hl", c: this.hlColor, w: 0.018 * this.size, p: [x, y, p] } : { t: "pen", c: this.tool.color, w: 0.0022 * this.size, p: [x, y, p] };
+      this.paintOn(c, this.active.stroke);
+    }, true);
+    root.addEventListener("pointermove", (e) => {
+      const a = this.active;
+      if (!a || e.pointerId !== a.id) return;
+      swallow(e);
+      if (e.pointerType === "pen") this.lastPen = performance.now();
+      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      for (const ev of events.length ? events : [e]) {
+        const [x, y, p] = a.at(ev);
+        if (this.tool.kind === "erase") { this.eraseAt(a, x, y); continue; }
+        const s = a.stroke, n = s.p.length;
+        const dx = (x - s.p[n - 3]) * a.r.x, dy = (y - s.p[n - 2]) * a.r.y;
+        if (dx * dx + dy * dy < 1.5) continue;
+        s.p.push(x, y, p);
+        if (s.t === "pen") this.paintOn(a.c, { ...s, p: s.p.slice(-6) });
+      }
+      if (a.stroke && a.stroke.t === "hl") this.drawWith(a.page, a.stroke);
+    }, true);
+    const end = (e) => {
+      const a = this.active;
+      if (!a || e.pointerId !== a.id) return;
+      swallow(e);
+      if (e.pointerType === "pen") this.lastPen = performance.now();
+      this.active = null;
+      if (this.tool.kind === "erase") {
+        if (a.erased.length) { this.undoStack.push({ page: a.page, erased: a.erased }); this.changed(); }
+        return;
+      }
+      this.add(a.page, a.stroke);
+    };
+    root.addEventListener("pointerup", end, true);
+    root.addEventListener("pointercancel", end, true);
+  }
+
+  // the page as it will look with a stroke still being drawn (for the highlighter, drawn whole each time)
+  drawWith(page, stroke) {
+    this.draw(page);
+    const c = this.layers.get(page);
+    if (c) this.paintOn(c, stroke);
+  }
+
+  // a text note typed at (x, y) on a page
+  addNote(page, x, y, text) {
+    const s = String(text || "").trim();
+    if (s) this.add(page, { t: "note", s, x, y, c: this.tool.color, z: this.size });
+  }
+
+  add(page, stroke) {
+    (this.pages[page] ||= []).push(stroke);
+    this.undoStack.push({ page, added: stroke });
+    this.draw(page);
+    this.changed();
+  }
+
+  eraseAt(a, x, y) {
+    const list = this.pages[a.page] || [];
+    const rad = 10; // pixels on screen
+    const near = (s) => {
+      if (s.t === "text" || s.t === "stamp") return Math.hypot((s.x - x) * a.r.x, (s.y - y) * a.r.y) < rad + 12 * (s.z || 1);
+      if (s.t === "note") {
+        const w = 0.012 * String(s.s).length * (s.z || 1), h = 0.025 * (s.z || 1) * String(s.s).split("\n").length;
+        return x >= s.x - 0.01 && x <= s.x + w + 0.01 && y >= s.y - 0.01 && y <= s.y + h + 0.01;
+      }
+      for (let i = 0; i < s.p.length; i += 3) if (Math.hypot((s.p[i] - x) * a.r.x, (s.p[i + 1] - y) * a.r.y) < rad + (s.t === "hl" ? 8 : 2)) return true;
+      return false;
+    };
+    const keep = [];
+    for (const s of list) { if (near(s)) a.erased.push(s); else keep.push(s); }
+    if (keep.length !== list.length) { this.pages[a.page] = keep; this.draw(a.page); }
+  }
+
+  undo() {
+    const u = this.undoStack.pop();
+    if (!u) return false;
+    const list = (this.pages[u.page] ||= []);
+    if (u.added) { const i = list.lastIndexOf(u.added); if (i >= 0) list.splice(i, 1); }
+    if (u.erased) list.push(...u.erased);
+    if (u.cleared) this.pages[u.page] = u.cleared;
+    this.draw(u.page);
+    this.changed();
+    return true;
+  }
+
+  clearPage(page) {
+    const list = this.pages[page];
+    if (!list || !list.length) return false;
+    this.undoStack.push({ page, cleared: list });
+    this.pages[page] = [];
+    this.draw(page);
+    this.changed();
+    return true;
+  }
+}

@@ -1,0 +1,12 @@
+{
+	"appId": "io.github.godisgoodcode.scoreatlas",
+	"appName": "ScoreAtlas",
+	"webDir": "www",
+	"ios": {
+		"contentInset": "never",
+		"backgroundColor": "#e9e6e0",
+		"scrollEnabled": false,
+		"allowsLinkPreview": false
+	},
+	"packageClassList": []
+}
