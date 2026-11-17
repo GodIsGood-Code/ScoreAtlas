@@ -49,7 +49,7 @@
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.4</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.4.1</span></span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -310,7 +310,7 @@
       </section>
       <section class="group">
         <h3>About</h3>
-        <p class="note" id="aboutText">ScoreAtlas version 0.5.4 · everything stays on this iPad.</p>
+        <p class="note" id="aboutText">ScoreAtlas version 0.5.4.1 · everything stays on this iPad.</p>
         <div class="actions">
           <button id="tourAgain" class="btn small" type="button">Show the welcome tour</button>
           <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/privacy.html" target="_blank" rel="noopener">Privacy</a>
@@ -472,7 +472,11 @@
 
 
       <details class="group whatsnew">
-        <summary>What's new in version 0.5.4</summary>
+        <summary>What's new in version 0.5.4.1</summary>
+        <ol>
+          <li>Fixed: right after an update, the iPad could mix new and old app files, so Move drew with the Pencil instead of moving markings. The app now always fetches the newest files and repairs a mix by itself.</li>
+        </ol>
+        <p class="note">From version 0.5.4:</p>
         <ol>
           <li><b>Move</b> (in Mark): drag a stamp, text, finger number or pen stroke to a new place. Undo puts it back.</li>
           <li><b>Pinch to zoom while marking</b>, with any tool, to write small and precisely. With Move, one finger moves around the zoomed page.</li>

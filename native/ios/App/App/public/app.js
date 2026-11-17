@@ -8,6 +8,7 @@ import { Hearing } from "./engine/hearing.js";
 import { makeLesson, addSection, sectionsOf, Follower, FOLLOW_SETTINGS } from "./engine/follower.js";
 import { loadLesson, saveLesson, forgetLesson, loadLastFile, saveLastFile, keepData, savePiece, loadPiece, loadMeta, putMeta, removePiece, loadSetlists, saveSetlists, listMeta } from "./store.js";
 import { Marks, INKS, STAMPS, drawStamp } from "./marks.js";
+import * as marksModule from "./marks.js"; // read loosely: an old copy has no MARKS_BUILD (a missing named import would stop the app)
 import { LibraryUI } from "./library.js";
 import { Metronome, TempoLadder, tempoName } from "./metronome.js";
 import { PageEditor, remapMarks } from "./pages.js";
@@ -25,6 +26,16 @@ import { PracticeLog, busiestPassages } from "./engine/practice.js";
 import { Recorder } from "./engine/recorder.js";
 
 const PDFJS = new URL("./vendor/pdfjs/", import.meta.url).href;
+// Right after an update, the browser may hand over a mix of new and old files (it may reuse a file for a few
+// minutes): if so, forget the kept copies and load again, once
+if (marksModule.MARKS_BUILD !== 2) {
+  let tried = false;
+  try { tried = sessionStorage.getItem("pt-reloaded") === "1"; sessionStorage.setItem("pt-reloaded", "1"); } catch {}
+  if (!tried) {
+    Promise.resolve(window.caches ? caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))) : null)
+      .catch(() => {}).then(() => location.reload());
+  }
+}
 // Running as the App Store app (Capacitor, see native/): a few things go through the app instead of the browser
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const native = (msg) => { try { window.webkit.messageHandlers.scoreAtlas.postMessage(msg); } catch { /* not in the app */ } };

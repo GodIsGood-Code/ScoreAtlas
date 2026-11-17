@@ -4,6 +4,9 @@
 // page (0..1 across and down), so they stay in place at any size, in two-page view and in half-page view.
 // While the Pencil is writing, touches from the hand resting on the screen are ignored (they don't turn the page).
 
+// Bumped when the markings change in a way app.js depends on (app.js checks it: mixed old and new files reload)
+export const MARKS_BUILD = 2;
+
 export const INKS = { black: "#1a1d21", red: "#c62828", blue: "#1f5fc4" };
 export const HIGHLIGHTS = { yellow: "#ffd200", green: "#7ed957", pink: "#ff7eb6", blue: "#6ec6ff" };
 const HIGHLIGHT = "rgba(255, 210, 0, 0.36)";

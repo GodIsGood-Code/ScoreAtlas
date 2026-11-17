@@ -1,7 +1,7 @@
 // Keeps the app on the iPad so it works without Wi-Fi (at a venue, say). The PDFs, lessons and markings are already
 // on the iPad (store.js); this keeps the app's own files. Online, the newest version is always fetched (so updates show
 // at once); offline, or when the network is slow, the kept copy is used. The big PDF reader files are kept as they are.
-const CACHE = "page-turner-v4";
+const CACHE = "page-turner-v5";
 const FILES = [
   "./", "index.html", "styles.css", "app.js", "listen.js", "store.js", "marks.js", "library.js", "share.js", "journal.js", "metronome.js", "pitch.js", "engine/notecheck.js", "pages.js", "importer.js", "engine/trouble.js",
   "audio/capture-worklet.js",
@@ -41,7 +41,9 @@ self.addEventListener("fetch", (e) => {
     }
     // the app's own files: the newest version, or the kept copy when offline or slow
     try {
-      const res = await Promise.race([fetch(req), timeout(4000)]);
+      // "no-cache": ask the website whether the file changed (it says files may be reused for 10 minutes, which
+      // after an update could mix new and old files); unchanged files come back quickly as "not modified"
+      const res = await Promise.race([fetch(req, { cache: "no-cache" }), timeout(4000)]);
       if (res.ok) cache.put(req, res.clone());
       return res;
     } catch {

@@ -15,10 +15,17 @@ the iPad app at 0.x.y with a higher `CURRENT_PROJECT_VERSION`). History, by rele
 0.1.1 · Test 3 (Teach and Follow) 0.2 · Test 4 (practice mode) 0.2.1 · Test 5 (sections) 0.2.2 · Test 6 (fixes)
 0.2.2.1 · Test 7 (sheet music) 0.3 · Test 8 0.3.1 · Test 9 0.3.2 and its fixes 0.3.2.1 · Test 10 0.3.3 · Test 11
 (library, Pencil, display, offline) 0.4 · Test 12 (design pass) 0.4.0.1 · Test 13 0.4.1 · Test 14 0.4.2 · Test 15
-(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 0.5.2 · 0.5.3 · **0.5.4** (current). The "Test N" entries below are those releases.
+(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 0.5.2 · 0.5.3 · 0.5.4 · **0.5.4.1** (current). The "Test N" entries below are those releases.
 
 ## Status
 
+- **0.5.4.1:** owner: in Move mode the Pencil drew and markings wouldn't move. Cause: GitHub Pages serves files with
+  `max-age=600`, so right after a publish the browser can mix new files (index.html/app.js with the Move tool) with an
+  old cached marks.js (no "move": unknown tools draw like the pen); reproduced by serving 0.5.3's marks.js with the
+  new app. Fixes: sw.js fetches the app's own files with `cache: "no-cache"` (revalidate; cache `page-turner-v5`);
+  marks.js exports `MARKS_BUILD` (2), read through a namespace import in app.js (a missing named import would stop the
+  app), and a mismatch clears the kept caches and reloads once (`pt-reloaded` in sessionStorage). Bump `MARKS_BUILD`
+  (and app.js's check) when app.js starts relying on something new in marks.js. iPad app: CURRENT_PROJECT_VERSION 2.
 - **0.5.4:** the owner's tweak request: move markings after placing them, and pinch while marking (they zoom in to
   write small). **Move** tool in Mark (`data-tool="move"`, first in the row): `hitAt` finds the topmost marking within
   16 px (`bounds` for text/stamps/notes, points for strokes), dragging shifts it (`shift`) with a dashed brass outline

@@ -4,7 +4,7 @@ Sheet music on the iPad that turns its own pages by listening to you play.
 
 **Try it:** https://godisgood-code.github.io/ScoreAtlas/ (open it in Safari on an iPad)
 
-## What works now (version 0.5.4)
+## What works now (version 0.5.4.1)
 
 - Open a PDF (scans work) and read it one page at a time. The app reopens your last PDF next time.
 - Turn pages with a Bluetooth page-turn pedal, by tapping (right side forward, left side back), or by swiping.
