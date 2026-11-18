@@ -1065,13 +1065,15 @@ function renderReport() {
   }
   const canCheck = lastRecording && lastRecording.log === r.log && sec.scoreFile;
   if (canCheck || r.notecheck) {
-    body.append(el("h3", null, "Notes"));
+    const nh = el("h3", "notes-head", "Notes ");
+    nh.append(el("span", "beta", "Beta"));
+    body.append(nh);
     if (!r.notecheck) {
       const b = el("button", "btn small primary", "Check my notes");
       b.type = "button";
       b.id = "checkNotesBtn";
       b.addEventListener("click", () => checkMyNotes());
-      body.append(b, el("p", "note", "Listens to the recording of this session for missed and wrong notes. Takes a little while; the iPad works it out on its own."));
+      body.append(b, el("p", "note", "Listens to the recording of this session for missed and wrong notes. Takes a little while; the iPad works it out on its own. Still learning: if a flag is wrong, tap Not in my music next to it."));
     } else {
       const nc = r.notecheck;
       body.append(el("p", "report-sum", nc.missed + nc.wrong
@@ -1529,7 +1531,9 @@ async function addScore(bytes, name, options = {}) {
     if (byBars) score = withPageStarts(score, options.pageStarts, firstPage);
     else score = shiftPages(score, firstPage);
     if (!score.measures.some((m) => m.notes.length)) throw new Error("the parts you chose have no notes.");
-    const counts = byBars ? {} : systemCounts(score);
+    // a file that never starts a new line of music (some exports leave the line breaks out) says nothing about the lines
+    // on the page: find them from the picture, as with bar numbers
+    const counts = byBars || !score.measures.some((m) => m.system > 1) ? {} : systemCounts(score);
     // (the file's own page numbers, moved to where the music starts in the PDF)
     const layout = new Array(score.measures.length).fill(null);
     for (let page = 1; page <= Math.min(score.pages, state.count); page++) {
@@ -1681,6 +1685,7 @@ async function openFromLibrary(key) {
       putMeta(meta).catch(() => {});
       fileName.textContent = meta.name;
     }
+    fixSample();
   }
   return ok;
 }
@@ -1759,11 +1764,11 @@ function drawPenChoice() {
   for (const b of $("inkRow").querySelectorAll("[data-color]")) b.setAttribute("aria-pressed", String(b.dataset.color === pen.color));
   const custom = !Object.values(INKS).includes(pen.color);
   $("inkCustom").style.background = custom ? pen.color : "";
-  $("inkRow").querySelector(".wheel").setAttribute("aria-pressed", String(custom));
+  $("inkRow").querySelector(".wheel").dataset.on = String(custom);
   for (const b of $("hlRow").querySelectorAll("[data-hl]")) b.setAttribute("aria-pressed", String(b.dataset.hl === marks.hlColor));
   const hlCustom = ![...$("hlRow").querySelectorAll("[data-hl]")].some((b) => b.dataset.hl === marks.hlColor);
   $("hlCustom").style.background = hlCustom ? marks.hlColor : "";
-  $("hlRow").querySelector(".wheel").setAttribute("aria-pressed", String(hlCustom));
+  $("hlRow").querySelector(".wheel").dataset.on = String(hlCustom);
   // the size dot shows the line as it will be drawn
   const dot = $("sizeDot"), hl = marks.tool.kind === "highlight";
   const px = hl ? Math.max(6, 16 * pen.size) : marks.tool.kind === "pen" ? Math.max(2, 4 * pen.size) : Math.max(8, 12 * Math.sqrt(pen.size));
@@ -2877,6 +2882,19 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 // First launch: the sample goes into the library with its sheet music, so Follow works on it straight away
 // (tests skip this unless they ask for it, so they start from an empty library)
+// The sample added by 0.5.3–0.5.4.1 came with sheet music that left out its line breaks, so its bar boxes were
+// wrong: when it's opened, add the corrected sheet music again (keeping its options)
+async function fixSample() {
+  const sec = scoreSectionOf();
+  if (!sec || sec.name !== "warm-ups.musicxml" || !sec.scoreFile || mode !== "idle") return;
+  try {
+    if (readScore(sec.scoreFile).measures.some((m) => m.system > 1)) return;
+    const res = await fetch(SAMPLE.score);
+    if (!res.ok) return;
+    await addScore(new Uint8Array(await res.arrayBuffer()), "warm-ups.musicxml", { ...sec.options, quiet: true });
+  } catch { /* stays as it was */ }
+}
+
 async function addSample(pdfBytes) {
   let seeded = false;
   try { seeded = localStorage.getItem("pt-sample-added") === "1"; } catch {}
@@ -2905,6 +2923,7 @@ clearEar();
     const meta = await loadMeta(state.key);
     if (meta) fileName.textContent = meta.name;
     else rememberPiece(last.name, last.bytes);
+    fixSample();
     return;
   }
   const before = openToken; // if the pianist opens a file meanwhile, leave it alone
@@ -2913,7 +2932,7 @@ clearEar();
     if (!res.ok) throw new Error(String(res.status));
     const data = new Uint8Array(await res.arrayBuffer());
     const copy = data.slice();
-    if (openToken === before && (await openPdf(data, SAMPLE.name))) await addSample(copy);
+    if (openToken === before && (await openPdf(data, SAMPLE.name))) { await addSample(copy); fixSample(); }
   } catch {
     if (state.pdf || openToken !== before) return;
     fileName.textContent = "No PDF open";

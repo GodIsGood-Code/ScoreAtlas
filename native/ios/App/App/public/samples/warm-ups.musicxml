@@ -343,6 +343,7 @@
       </note>
     </measure>
     <measure implicit="no" number="5">
+      <print new-system="yes" />
       <attributes>
         <key>
           <fifths>1</fifths>
@@ -737,6 +738,7 @@
       </note>
     </measure>
     <measure implicit="no" number="10">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>E</step>
@@ -1133,6 +1135,7 @@
       </note>
     </measure>
     <measure implicit="no" number="15">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>F</step>
@@ -1588,6 +1591,7 @@
       </note>
     </measure>
     <measure implicit="no" number="5">
+      <print new-system="yes" />
       <attributes>
         <key>
           <fifths>-2</fifths>
@@ -1989,6 +1993,7 @@
       </note>
     </measure>
     <measure implicit="no" number="10">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>F</step>
@@ -2390,6 +2395,7 @@
       </note>
     </measure>
     <measure implicit="no" number="15">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>F</step>
@@ -2906,6 +2912,7 @@
       </note>
     </measure>
     <measure implicit="no" number="6">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>F</step>
@@ -3240,6 +3247,7 @@
       </note>
     </measure>
     <measure implicit="no" number="11">
+      <print new-system="yes" />
       <attributes>
         <key>
           <fifths>-1</fifths>
@@ -3612,6 +3620,7 @@
       </note>
     </measure>
     <measure implicit="no" number="16">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>G</step>
@@ -4082,6 +4091,7 @@
       </note>
     </measure>
     <measure implicit="no" number="8">
+      <print new-system="yes" />
       <note>
         <pitch>
           <step>G</step>
@@ -4487,6 +4497,7 @@
       </note>
     </measure>
     <measure implicit="no" number="15">
+      <print new-system="yes" />
       <attributes>
         <key>
           <fifths>-3</fifths>

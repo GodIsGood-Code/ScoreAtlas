@@ -31,7 +31,7 @@ const ORIGIN = 'http://localhost:8765';
   check('first launch: the sample has its sheet music, ready to follow', ready && (await page.getAttribute('#followBtn', 'data-ready')) === 'true', await page.textContent('#lessonInfo'));
   await page.click('#libraryBtn');
   await page.waitForSelector('.lib-piece', { timeout: 5000 }).catch(() => {});
-  check('... and it is in the library', (await page.$$('.lib-piece[aria-label="Open Sample: Warm-ups"]')).length === 1, (await page.$$eval('.lib-piece', (x) => x.map((e) => e.getAttribute('aria-label')))).join(', '));
+  check('... and it is in the library', (await page.$$('.lib-piece[data-piece="Sample: Warm-ups"]')).length === 1, (await page.$$eval('.lib-piece', (x) => x.map((e) => e.dataset.piece))).join(', '));
   await page.keyboard.press('Escape');
   const msgs = await page.evaluate(() => window.__native);
   check('the app opens from the copied files (sample piece)', (await page.textContent('#pageNum')) === '1 / 4');

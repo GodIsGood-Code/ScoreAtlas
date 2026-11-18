@@ -63,6 +63,7 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
   const info = await page.textContent('#lessonInfo');
   check('teaching learned 3 page turns', /3 page turns/.test(info), info);
   check('Follow is ready after teaching', (await page.getAttribute('#followBtn', 'data-ready')) === 'true');
+  await page.waitForTimeout(2000);
   await ctx.close();
 
   // Follow, in a fresh browser session: the lesson must have been saved on the device
@@ -72,8 +73,9 @@ const waitAudio = (page, t) => page.waitForFunction((t) => window.pageTurner.aud
   check('the lesson is still there after reopening', kept);
   await page.click('#followBtn');
   // the test machine's fake microphone sometimes fails to start in a second browser session: try once more
-  await page.waitForTimeout(800);
-  if ((await page.evaluate(() => window.pageTurner.mode)) !== 'follow') {
+  // (the microphone can take a few seconds to start: a second tap before then would stop Follow again)
+  const started = await page.waitForFunction(() => window.pageTurner.mode === 'follow', null, { timeout: 5000 }).then(() => true, () => false);
+  if (!started) {
     console.log('note: Follow did not start the first time:', await page.evaluate(() => document.querySelector('#earNote').textContent || '(no microphone message)'));
     await page.keyboard.press('Escape');
     await page.click('#followBtn');

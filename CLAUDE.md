@@ -9,7 +9,7 @@ language; the owner tests on their iPad and reports back.
 
 0.1 was the very first version. Each release adds, by its biggest change: **0.1** for a big change (like Teach, or
 following straight from the sheet music), **0.0.1** for a smaller addition (like the metronome), **0.0.0.1** for bug fixes
-and UI remaps. The App Store launch is **1.0**. Shown in the top bar's tag, Settings → About and "What's new"; the iPad
+and UI remaps. The App Store launch is **1.0**. Shown in Settings → About (the top bar's tag and "What's new" were removed for 1.0); the iPad
 app's version is set in `native/ios/App/App/Info.plist` (`CFBundleShortVersionString`, and `CFBundleVersion`, the build
 number: raise it for every upload; App Store versions allow at most three numbers, so a fix-only 0.x.y.z release keeps
 the iPad app at 0.x.y with a higher build number). Never edit `project.pbxproj` for versions: Xcode writes the owner's
@@ -17,10 +17,25 @@ Team into it, and their local copy then conflicts with our changes when they pul
 0.1.1 · Test 3 (Teach and Follow) 0.2 · Test 4 (practice mode) 0.2.1 · Test 5 (sections) 0.2.2 · Test 6 (fixes)
 0.2.2.1 · Test 7 (sheet music) 0.3 · Test 8 0.3.1 · Test 9 0.3.2 and its fixes 0.3.2.1 · Test 10 0.3.3 · Test 11
 (library, Pencil, display, offline) 0.4 · Test 12 (design pass) 0.4.0.1 · Test 13 0.4.1 · Test 14 0.4.2 · Test 15
-(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 0.5.2 · 0.5.3 · 0.5.4 · **0.5.4.1** (current). The "Test N" entries below are those releases.
+(wrong-note detection) 0.5 · Test 16 0.5.1 · Test 17 0.5.2 · 0.5.3 · 0.5.4 · 0.5.4.1 · **0.5.4.2** (current). The "Test N" entries below are those releases.
 
 ## Status
 
+- **0.5.4.2:** the owner's launch polish list (free for the foreseeable future; no competitor comparison wanted).
+  Top-bar version tag and "What's new" removed; a **Beta** pill on Check my notes (`.beta`); **open-source licenses**
+  in Settings → About (`details.licenses`; Capacitor line `app-only`). **Accessibility**: `tests/a11y.cjs` (axe-core
+  4.10.3 from `npm pack`, path in `AXE`) on ten screens in light and dark, all pass: the library card is now a
+  `div.lib-piece[data-piece=NAME]` holding a `button.lib-open` (picture and name) beside Rename/Remove (tests select
+  `.lib-piece[data-piece="…"]`), the color wheels' label moved to the inputs and their chosen state is `data-on`.
+  **Speed** (`tests/speed.cjs`, Chromium CPU throttled 1/4/6x): listening keeps up at 6x (1.00), page turns 75–140 ms,
+  following busy under 1% of the time, first launch with the sample ready 2.6/8.4/12.7 s, Hear the music starts in
+  1–5 s, adding PDF+sheet music 1.2–6.2 s; nothing needed fixing. **Bug found by the screenshots**: the sample's
+  MusicXML had no `<print new-system>`, so all of a page's bars were boxed as one line (wrong highlight, loops,
+  tints): `make_sample_xml.py` now adds line breaks from Verovio's SVG systems, addScore finds the lines from the
+  picture (`findMeasuresByCount`) when a file never starts a new system, and `fixSample()` re-adds the corrected
+  sheet music when an old copy of the sample is opened. **Store**: `release/app-store.md` final for 1.0 (description
+  3504 characters), `release/screenshots/` (8, 2064×2752 and one 2752×2064, made by `tools/make_screenshots.cjs`
+  from the sample only), checklist updated; privacy page mentions kept takes. iPad app CFBundleVersion 3.
 - **0.5.4.1:** owner: in Move mode the Pencil drew and markings wouldn't move. Cause: GitHub Pages serves files with
   `max-age=600`, so right after a publish the browser can mix new files (index.html/app.js with the Move tool) with an
   old cached marks.js (no "move": unknown tools draw like the pen); reproduced by serving 0.5.3's marks.js with the
@@ -438,6 +453,8 @@ Steps are numbered across phases, in order. Work through them in that order unle
   - `NODE_PATH="$(npm root -g)" node tests/test17.cjs`: pinch to zoom (synthetic two-finger pointers: 3x, sharper
     redraw, one-finger pan without a turn, a turn keeps the zoom from the top, Whole page) and kept takes (keep after a
     session with the fake microphone, rename, play after a reload with the highlight, share as WAV, delete).
+  - `AXE=…/axe.min.js NODE_PATH="$(npm root -g)" node tests/a11y.cjs`: accessibility (WCAG 2.1 AA) on the main screens.
+  - `NODE_PATH="$(npm root -g)" node tests/speed.cjs 1,4,6`: timings with the CPU slowed (older iPads).
   - `NODE_PATH="$(npm root -g)" node tests/native-sim.cjs`: `native/www` served with stand-ins for Capacitor and the
     message handler: opens, says ready and keep awake, fonts built in, a handed-over file opens, web-only help hidden,
     no missing files, no requests outside the app.

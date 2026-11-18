@@ -40,7 +40,7 @@ const ORIGIN = 'http://localhost:8765';
   const names = await page.$$eval('.lib-piece .lib-name', (els) => els.map((e) => e.textContent));
   check('both PDFs are in the library', names.includes('aba_dc') && names.includes('scan-test'), names.join(', '));
   check('library pieces have a picture of page 1', (await page.$$('.lib-thumb img')).length >= 2);
-  await page.click('.lib-piece[aria-label="Open aba_dc"] .lib-name');
+  await page.click('.lib-piece[data-piece="aba_dc"] .lib-name');
   check('a piece opens from the library', await waitNum('1 / 2'));
 
   // ---------- Setlists ----------
@@ -67,7 +67,7 @@ const ORIGIN = 'http://localhost:8765';
   // carry on with the three-page scan
   await page.click('#libraryBtn');
   await page.click('.lib-tab[data-tab="pieces"]');
-  await page.click('.lib-piece[aria-label="Open scan-test"] .lib-name');
+  await page.click('.lib-piece[data-piece="scan-test"] .lib-name');
   await waitNum('1 / 3');
   await page.waitForTimeout(800); // the counter changes as soon as the page is asked for; let it be drawn
 
@@ -197,7 +197,7 @@ const ORIGIN = 'http://localhost:8765';
   check('offline: the app still opens, with the last piece', opened, await num());
   await page.click('#libraryBtn');
   await page.waitForSelector('#library:not([hidden]) .lib-piece', { timeout: 5000 }).catch(() => {});
-  await page.click('.lib-piece[aria-label="Open aba_dc"] .lib-name').catch(() => {});
+  await page.click('.lib-piece[data-piece="aba_dc"] .lib-name').catch(() => {});
   check('offline: pieces open from the library', await waitNum('1 / 2'));
   await ctx.setOffline(false);
 

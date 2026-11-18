@@ -49,7 +49,7 @@
     <header class="rail">
       <div class="ident">
         <button id="libraryBtn" class="piece-btn" type="button" aria-label="Library: your pieces and setlists">
-          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas <span class="tag">0.5.4.1</span></span><span class="file" id="fileName">Loading…</span></span>
+          <svg class="i"><use href="#i-book"/></svg><span class="piece-text"><span class="mark">ScoreAtlas</span><span class="file" id="fileName">Loading…</span></span>
         </button>
         <span class="setlist-chip" id="setlistChip" hidden><span id="setlistText"></span><button id="setlistEnd" class="chip-x" type="button" aria-label="End the setlist"><svg class="i"><use href="#i-x"/></svg></button></span>
       </div>
@@ -146,14 +146,14 @@
             <button class="swatch" type="button" data-color="#1a1d21" aria-label="Black"><i style="background:#1a1d21"></i></button>
             <button class="swatch" type="button" data-color="#c62828" aria-label="Red"><i style="background:#c62828"></i></button>
             <button class="swatch" type="button" data-color="#1f5fc4" aria-label="Blue"><i style="background:#1f5fc4"></i></button>
-            <label class="swatch wheel" aria-label="Any color"><input id="inkPicker" type="color" value="#2e7d32"><i id="inkCustom"></i></label>
+            <label class="swatch wheel"><input id="inkPicker" type="color" value="#2e7d32" aria-label="Any color"><i id="inkCustom"></i></label>
           </span>
           <span class="tool-group colors" id="hlRow" role="group" aria-label="Highlighter color" hidden>
             <button class="swatch" type="button" data-hl="#ffd200" aria-label="Yellow"><i style="background:#ffd200"></i></button>
             <button class="swatch" type="button" data-hl="#7ed957" aria-label="Green"><i style="background:#7ed957"></i></button>
             <button class="swatch" type="button" data-hl="#ff7eb6" aria-label="Pink"><i style="background:#ff7eb6"></i></button>
             <button class="swatch" type="button" data-hl="#6ec6ff" aria-label="Light blue"><i style="background:#6ec6ff"></i></button>
-            <label class="swatch wheel" aria-label="Any color"><input id="hlPicker" type="color" value="#ffa94d"><i id="hlCustom"></i></label>
+            <label class="swatch wheel"><input id="hlPicker" type="color" value="#ffa94d" aria-label="Any highlighter color"><i id="hlCustom"></i></label>
           </span>
           <span class="tool-group digits" id="digitRow" role="group" aria-label="Finger" hidden><button class="btn small" type="button" aria-pressed="true">1</button><button class="btn small" type="button">2</button><button class="btn small" type="button">3</button><button class="btn small" type="button">4</button><button class="btn small" type="button">5</button></span>
           <span class="tool-group stamps" id="stampRow" role="group" aria-label="Stamp" hidden></span>
@@ -310,12 +310,26 @@
       </section>
       <section class="group">
         <h3>About</h3>
-        <p class="note" id="aboutText">ScoreAtlas version 0.5.4.1 · everything stays on this iPad.</p>
+        <p class="note" id="aboutText">ScoreAtlas version 0.5.4.2 · free · everything stays on this iPad.</p>
         <div class="actions">
           <button id="tourAgain" class="btn small" type="button">Show the welcome tour</button>
           <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/privacy.html" target="_blank" rel="noopener">Privacy</a>
           <a class="btn small" href="https://godisgood-code.github.io/ScoreAtlas/support.html" target="_blank" rel="noopener">Support</a>
         </div>
+        <details class="licenses">
+          <summary>Open-source software</summary>
+          <p class="note">ScoreAtlas is built with these, and thanks their authors. Each license allows use in free and paid apps.</p>
+          <ul>
+            <li><b>PDF.js</b> (Mozilla) · Apache License 2.0 · shows the PDFs</li>
+            <li><b>pdf-lib</b> (Andrew Dillon) · MIT License · Edit pages</li>
+            <li><b>TensorFlow.js</b> (Google) · Apache License 2.0 · runs the note listener</li>
+            <li><b>Basic Pitch</b> (Spotify) · Apache License 2.0 · the note listener for Check my notes</li>
+            <li><b>fflate</b> (Arjun Barrett) · MIT License · opens .mxl and backup files</li>
+            <li class="app-only"><b>Capacitor</b> (Ionic) · MIT License · makes ScoreAtlas an iPad app</li>
+            <li><b>Atkinson Hyperlegible</b> (Braille Institute), <b>Fraunces</b> (Undercase Type) and <b>IBM Plex Mono</b> (IBM) · SIL Open Font License 1.1 · the typefaces</li>
+          </ul>
+          <p class="note">The full license texts: <a href="https://github.com/GodIsGood-code/ScoreAtlas/tree/main/vendor" target="_blank" rel="noopener">github.com/GodIsGood-code/ScoreAtlas/tree/main/vendor</a>.</p>
+        </details>
       </section>
     </aside>
 
@@ -471,44 +485,6 @@
       </section>
 
 
-      <details class="group whatsnew">
-        <summary>What's new in version 0.5.4.1</summary>
-        <ol>
-          <li>Fixed: right after an update, the iPad could mix new and old app files, so Move drew with the Pencil instead of moving markings. The app now always fetches the newest files and repairs a mix by itself.</li>
-        </ol>
-        <p class="note">From version 0.5.4:</p>
-        <ol>
-          <li><b>Move</b> (in Mark): drag a stamp, text, finger number or pen stroke to a new place. Undo puts it back.</li>
-          <li><b>Pinch to zoom while marking</b>, with any tool, to write small and precisely. With Move, one finger moves around the zoomed page.</li>
-          <li>Stamps, finger numbers and text are placed when your finger lifts, so a pinch never leaves one behind.</li>
-        </ol>
-        <p class="note">From version 0.5.3:</p>
-        <ol>
-          <li><b>Try it right away</b>: the sample piece, Warm-ups, is in your Library with its sheet music. Open it, tap Follow and play.</li>
-          <li><b>Practice → History</b>: your last session, listening back, kept takes and the journal, in one place.</li>
-          <li><b>More stamps</b>: ppp to fff, fp, sf, rf, cresc., dim., rit., accel., a tempo, marcato, trill, mordent, turn, arpeggio, 8va and 8vb, una corda, tre corde, segno and coda. Slide the row sideways to see them all.</li>
-          <li>The microphone check moved to <b>Help → Check the microphone and the pedal</b>.</li>
-        </ol>
-        <p class="note">From version 0.5.2:</p>
-        <ol>
-          <li><b>Pinch to zoom</b>: two fingers on the music zoom in; one finger moves the page around; <b>Whole page</b> (bottom right) goes back. Pages turn as usual and show from their top.</li>
-          <li><b>Keep this take</b>: after a session, keep its recording with the piece (in the practice report, or while listening back). <b>Practice → Kept takes</b>: play them with the bar highlighted, rename, share or delete.</li>
-          <li>The typefaces are now built in (no internet needed), ready for the App Store version.</li>
-        </ol>
-        <p class="note">From version 0.5.1:</p>
-        <ol>
-          <li><b>Practice menu</b> (top bar): loops, trouble spots, hands, hearing the music, the metronome, your report and journal, all in one place.</li>
-          <li><b>Trouble spots</b>: the bars you stumble on, looped one at a time with the metronome, faster each clean time.</li>
-          <li><b>Hands separately</b>: Follow listens for just the left or right hand.</li>
-          <li><b>Hear the music</b>: the sheet music played from this page, at any speed, with the bar highlighted.</li>
-          <li><b>Mark</b>: any pen size (slider), any color (color wheel), highlighter colors, stamps (dynamics, accents, fermata, breath and pedal marks) and text notes.</li>
-          <li><b>Metronome</b>: type the tempo, any time signature, 2–4 clicks a beat, tap tempo.</li>
-          <li><b>Edit pages</b> (Piece): take out blank pages, reorder, turn, or add pages from another PDF.</li>
-          <li><b>Add music</b> (Library): a PDF and its sheet music together, several at once. A Mac helper makes the sheet music for you (see Help).</li>
-          <li><b>Share a setlist</b> with its music; <b>notes over time</b> in the journal; <b>Not in my music</b> in Check my notes.</li>
-          <li>Steadier following: the page you start on counts like a page you turned to.</li>
-        </ol>
-      </details>
       <div class="actions footer-links">
         <button id="cardSettings" class="btn small" type="button">Settings</button>
         <button id="cardHelp" class="btn small" type="button">Help</button>

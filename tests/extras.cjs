@@ -86,7 +86,7 @@ const ORIGIN = 'http://localhost:8765';
 
   // ---------- Go to a bar (needs sheet music) ----------
   await page.click('#libraryBtn');
-  await page.click('.lib-piece[aria-label="Open aba_dc"] .lib-name');
+  await page.click('.lib-piece[data-piece="aba_dc"] .lib-name');
   await waitNum('1 / 2');
   await page.setInputFiles('#scoreInput', path.join(__dirname, 'fixtures/aba_dc.mxl'));
   await page.waitForFunction(() => /Sheet music: 16 measures/.test(document.querySelector('#lessonInfo').textContent), null, { timeout: 30000 }).catch(() => {});
@@ -135,8 +135,8 @@ const ORIGIN = 'http://localhost:8765';
   // remove a piece, then restore
   await page.keyboard.press('Escape');
   await page.click('#libraryBtn');
-  const rm = '.lib-piece[aria-label="Open scan-test"] >> text=Remove';
-  await page.click(rm); await page.click('.lib-piece[aria-label="Open scan-test"] >> text=Tap again to remove');
+  const rm = '.lib-piece[data-piece="scan-test"] >> text=Remove';
+  await page.click(rm); await page.click('.lib-piece[data-piece="scan-test"] >> text=Tap again to remove');
   await page.waitForTimeout(500);
   check('a piece removed', (await page.$$('.lib-piece')).length === 1);
   await page.keyboard.press('Escape');
@@ -149,7 +149,7 @@ const ORIGIN = 'http://localhost:8765';
   await page.waitForSelector('#library:not([hidden]) .lib-piece', { timeout: 5000 }).catch(() => {});
   const names = await page.$$eval('.lib-piece .lib-name', (els) => els.map((e) => e.textContent));
   check('restoring the backup brings the piece back', names.includes('scan-test') && names.includes('aba_dc'), names.join(', '));
-  await page.click('.lib-piece[aria-label="Open aba_dc"] .lib-name');
+  await page.click('.lib-piece[data-piece="aba_dc"] .lib-name');
   await waitNum('1 / 2');
   await page.waitForTimeout(600);
   check('... with its sheet music and markings', /Sheet music: 16 measures/.test(await page.textContent('#lessonInfo')) && (await pt(() => Object.values(window.pageTurner.marks().pages).flat().length)) >= 1);

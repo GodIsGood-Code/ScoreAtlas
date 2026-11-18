@@ -79,16 +79,19 @@ export class LibraryUI {
     const q = this.search.value.trim().toLowerCase();
     const list = this.pieces.filter((p) => !q || p.name.toLowerCase().includes(q));
     if (!this.pieces.length) {
-      this.body.append(this.el("p", "note", "No pieces yet. Tap “Add a PDF” to put one in your library. Every PDF you open is kept here."));
+      this.body.append(this.el("p", "note", "No pieces yet. Tap “Add music” to put one in your library. Every PDF you open is kept here."));
       return;
     }
     if (!list.length) { this.body.append(this.el("p", "note", "No piece matches.")); return; }
     const grid = this.el("div", "lib-grid");
     for (const p of list) {
+      // the card: a button that opens the piece (picture and name), and the piece's own buttons beside it (buttons
+      // can't sit inside a button for screen readers)
       const card = this.el("div", "lib-piece");
-      card.tabIndex = 0;
-      card.setAttribute("role", "button");
-      card.setAttribute("aria-label", `Open ${p.name}`);
+      card.dataset.piece = p.name;
+      const openBtn = this.el("button", "lib-open");
+      openBtn.type = "button";
+      openBtn.setAttribute("aria-label", `Open ${p.name}`);
       const thumb = this.el("div", "lib-thumb");
       if (p.thumb) { const img = this.el("img"); img.src = p.thumb; img.alt = ""; thumb.append(img); }
       const info = this.el("div", "lib-info");
@@ -107,10 +110,10 @@ export class LibraryUI {
           await this.refresh();
         }),
       );
-      card.append(thumb, info, actions);
+      openBtn.append(thumb, info);
+      card.append(openBtn, actions);
       const open = () => { this.close(); this.onOpen(p.key); };
-      card.addEventListener("click", open);
-      card.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
+      openBtn.addEventListener("click", open);
       grid.append(card);
     }
     this.body.append(grid);

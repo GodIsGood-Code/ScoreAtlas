@@ -39,7 +39,7 @@ const ORIGIN = 'http://localhost:8765';
   check('a PDF and its sheet music added together are paired', paired && (await page.textContent('#pageNum')) === '1 / 2');
   await page.click('#libraryBtn');
   await page.waitForSelector('.lib-piece', { timeout: 5000 }).catch(() => {});
-  check('the piece is in the library', (await page.$$('.lib-piece[aria-label="Open aba_dc"]')).length === 1, `${(await page.$$('.lib-piece')).length} pieces`);
+  check('the piece is in the library', (await page.$$('.lib-piece[data-piece="aba_dc"]')).length === 1, `${(await page.$$('.lib-piece')).length} pieces`);
   await page.keyboard.press('Escape');
 
   // ---------- Hands ----------
